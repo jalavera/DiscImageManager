@@ -3601,8 +3601,16 @@ begin
  if index=0 then index:=1;
  SaveImage.FilterIndex:=index;
  //Populate the filename part of the dialogue
- SaveImage.FileName:=filename+'.'+Image.FormatExt;
- SaveImage.DefaultExt:='.'+Image.FormatExt;
+ //DOS images are raw sector dumps: keep the original extension (.img, .ima,
+ //.flp...) so emulators still recognise them; otherwise use the default
+ if(Image.MajorFormatNumber=diDOSPlus)and(Length(ext)>1)then
+  ext:=Copy(ext,2,Length(ext))
+ else
+  ext:=Image.FormatExt;
+ SaveImage.FileName:=filename+'.'+ext;
+ SaveImage.DefaultExt:='.'+ext;
+ //Ask before overwriting an existing file
+ SaveImage.Options:=SaveImage.Options+[ofOverwritePrompt];
  //Point it at the same directory from whence it was opened
  SaveImage.InitialDir:=pathname;
  //Show the dialogue
