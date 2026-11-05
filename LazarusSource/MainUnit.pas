@@ -513,6 +513,8 @@ type
    FCreateDSC          :Boolean;
    //Append filetypes to files upon exporting
    FAppendFileType     :Boolean;
+   //Keep the original extension when saving DOS images
+   FKeepDOSExt         :Boolean;
    //Produce a log file for debugging
    Fdebug              :Boolean;
    //View options (what is visible)
@@ -3439,6 +3441,8 @@ begin
  Image.CreateDSC           :=FCreateDSC;
  //Append filetype upon exporting files
  FAppendFileType           :=DIMReg.GetRegValB('Append_Filetype',True);
+ //Keep the original extension when saving DOS images
+ FKeepDOSExt               :=DIMReg.GetRegValB('Keep_DOS_Ext',False);
  //View menu options
  ViewOptions               :=DIMReg.GetRegValI('View_Options',$FFFF);
  //Toolbar order - this doesn't work currently
@@ -3601,8 +3605,15 @@ begin
  if index=0 then index:=1;
  SaveImage.FilterIndex:=index;
  //Populate the filename part of the dialogue
- SaveImage.FileName:=filename+'.'+Image.FormatExt;
- SaveImage.DefaultExt:='.'+Image.FormatExt;
+ //DOS images are raw sector dumps: optionally keep the original extension
+ //(.img, .ima, .flp...) so that emulators still recognise them
+ if(FKeepDOSExt)and(Image.MajorFormatNumber=diDOSPlus)then
+ begin
+  if Length(ext)>1 then ext:=Copy(ext,2,Length(ext)) else ext:='img';
+ end
+ else ext:=Image.FormatExt;
+ SaveImage.FileName:=filename+'.'+ext;
+ SaveImage.DefaultExt:='.'+ext;
  //Ask before overwriting an existing file
  SaveImage.Options:=SaveImage.Options+[ofOverwritePrompt];
  //Point it at the same directory from whence it was opened
@@ -5780,6 +5791,7 @@ begin
  SettingsForm.OpenDOS.Ticked               :=FOpenDOS;
  SettingsForm.CreateDSC.Ticked             :=FCreateDSC;
  SettingsForm.AddFiletype.Ticked           :=FAppendFileType;
+ SettingsForm.KeepDOSExt.Ticked            :=FKeepDOSExt;
  //Show the form, modally
  SettingsForm.ShowModal;
  if SettingsForm.ModalResult=mrOK then
@@ -5808,6 +5820,7 @@ begin
   FOpenDOS            :=SettingsForm.OpenDOS.Ticked;
   FCreateDSC          :=SettingsForm.CreateDSC.Ticked;
   FAppendFileType     :=SettingsForm.AddFiletype.Ticked;
+  FKeepDOSExt         :=SettingsForm.KeepDOSExt.Ticked;
   //Save the settings
   SaveConfigSettings;
   //Change the control style, if necessary
@@ -5933,6 +5946,7 @@ begin
  DIMReg.SetRegValB('Open_DOS',            FOpenDOS);
  DIMReg.SetRegValB('Create_DSC',          FCreateDSC);
  DIMReg.SetRegValB('Append_Filetype',     FAppendFileType);
+ DIMReg.SetRegValB('Keep_DOS_Ext',        FKeepDOSExt);
  DIMReg.SetRegValB('UEF_Compress',        FUEFCompress);
  Image.InterleaveMethod    :=ADFSInterleave;
  Image.SparkAsFS           :=SparkIsFS;
