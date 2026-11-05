@@ -1,0 +1,73 @@
+name: Build Disc Image Manager
+ 
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+ 
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gcarreno/setup-lazarus@v3
+        with:
+          lazarus-version: "stable"
+          with-cache: false
+      - name: Build Win64
+        working-directory: LazarusSource
+        run: lazbuild -B --bm="Release Windows 64 bit" DiscImageManager.lpi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiscImageManager-win64
+          path: LazarusSource/DiscImageManager.exe
+ 
+  macos:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gcarreno/setup-lazarus@v3
+        with:
+          lazarus-version: "stable"
+          with-cache: false
+      - name: Build macOS Intel (x86_64)
+        working-directory: LazarusSource
+        run: |
+          lazbuild -B --ws=cocoa --bm="Release macOS 64 bit" DiscImageManager.lpi
+          mv DiscImageManager ../DIM-x86_64
+      - name: Build macOS Apple Silicon (aarch64)
+        working-directory: LazarusSource
+        run: |
+          lazbuild -B --ws=cocoa --bm="Release macOS ARM" DiscImageManager.lpi
+          mv DiscImageManager ../DIM-arm64
+      - name: Make app bundles
+        run: |
+          for arch in x86_64 arm64; do
+            app="out-$arch/Disc Image Manager.app"
+            mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+            cp "DIM-$arch" "$app/Contents/MacOS/DiscImageManager"
+            cp LazarusSource/Icon.icns "$app/Contents/Resources/Icon.icns"
+            cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Disc Image Manager</string>
+            <key>CFBundleExecutable</key><string>DiscImageManager</string>
+            <key>CFBundleIdentifier</key><string>GJHSoftware.RetroComputing.DiscImageManager</string>
+            <key>CFBundleIconFile</key><string>Icon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.50.6</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+            codesign --force --deep -s - "$app"
+            ditto -c -k --keepParent "$app" "DiscImageManager-macOS-$arch.zip"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiscImageManager-macOS-x86_64
+          path: DiscImageManager-macOS-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiscImageManager-macOS-arm64
+          path: DiscImageManager-macOS-arm64.zip
