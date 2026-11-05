@@ -1,5 +1,8 @@
 name: Build Disc Image Manager
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -74,3 +77,26 @@ jobs:
           name: DiscImageManager-macOS-arm64
           path: DiscImageManager-macOS-arm64.zip
           if-no-files-found: error
+
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+      - name: Package files
+        run: |
+          cd dist
+          zip -j DiscImageManager-win64.zip DiscImageManager-win64/DiscImageManager.exe
+          mv DiscImageManager-macOS-x86_64/*.zip .
+          mv DiscImageManager-macOS-arm64/*.zip .
+          ls -l *.zip
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Disc Image Manager (build ${{ github.run_number }})
+          body: |
+            Compilació automàtica del commit ${{ github.sha }}.
+            Missatge: ${{ github.event.head_commit.message }}
+          files: dist/*.zip
