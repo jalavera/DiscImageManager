@@ -73,7 +73,8 @@ type
   ScanSubDirs,
   OpenDOS,
   CreateDSC,
-  AddFiletype: TRISCOSTickBox;
+  AddFiletype,
+  KeepDOSExt: TRISCOSTickBox;
   CancelButton,
   OKButton: TRISCOSButton;
   procedure FormCreate(Sender: TObject);
@@ -128,6 +129,7 @@ begin
  OpenDOS.NativeOS               :=MainForm.Fstyling=MainForm.NativeStyle;
  CreateDSC.NativeOS             :=MainForm.Fstyling=MainForm.NativeStyle;
  AddFiletype.NativeOS           :=MainForm.Fstyling=MainForm.NativeStyle;
+ KeepDOSExt.NativeOS            :=MainForm.Fstyling=MainForm.NativeStyle;
  //Re-align the buttons
  CancelButton.Top     :=OKButton.Top+(OKButton.Height-CancelButton.Height)div 2;
  TilePictureRO5.Picture.Bitmap   :=MainForm.GetTextureTile(1);
@@ -300,7 +302,10 @@ begin
  AddFiletype:=CreateTickBox('Append filetypes on export',MiscPanel);
  AddFiletype.Top:=CreateDSC.Top+CreateDSC.Height+Round(4*ratio);
  AddFiletype.Left:=CreateDSC.Left;
- MiscPanel.Height:=CompressUEF.Top+CompressUEF.Height+Round(8*ratio);
+ KeepDOSExt:=CreateTickBox('Keep DOS image extension on save',MiscPanel);
+ KeepDOSExt.Top:=CompressUEF.Top+CompressUEF.Height+Round(4*ratio);
+ KeepDOSExt.Left:=Round(4*ratio);
+ MiscPanel.Height:=KeepDOSExt.Top+KeepDOSExt.Height+Round(8*ratio);
  //Move the panels up/down
  styleType.Top:=TexturePanel.Top+TexturePanel.Height;
  DFSPanel.Top:=styleType.Top+styleType.Height;
