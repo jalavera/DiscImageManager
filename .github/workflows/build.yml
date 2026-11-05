@@ -1,15 +1,15 @@
 name: Build Disc Image Manager
- 
+
 on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
- 
+
 jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
@@ -17,15 +17,16 @@ jobs:
       - name: Build Win64
         working-directory: LazarusSource
         run: lazbuild -B --bm="Release Windows 64 bit" DiscImageManager.lpi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: DiscImageManager-win64
-          path: LazarusSource/DiscImageManager.exe
- 
+          path: LazarusSource/lib/Release/x86_64-win64/DiscImageManager.exe
+          if-no-files-found: error
+
   macos:
     runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
@@ -34,12 +35,12 @@ jobs:
         working-directory: LazarusSource
         run: |
           lazbuild -B --ws=cocoa --bm="Release macOS 64 bit" DiscImageManager.lpi
-          mv DiscImageManager ../DIM-x86_64
+          mv lib/Release/x86_64-darwin/DiscImageManager ../DIM-x86_64
       - name: Build macOS Apple Silicon (aarch64)
         working-directory: LazarusSource
         run: |
           lazbuild -B --ws=cocoa --bm="Release macOS ARM" DiscImageManager.lpi
-          mv DiscImageManager ../DIM-arm64
+          mv lib/Release/aarch64-darwin/DiscImageManager ../DIM-arm64
       - name: Make app bundles
         run: |
           for arch in x86_64 arm64; do
@@ -63,11 +64,13 @@ jobs:
             codesign --force --deep -s - "$app"
             ditto -c -k --keepParent "$app" "DiscImageManager-macOS-$arch.zip"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: DiscImageManager-macOS-x86_64
           path: DiscImageManager-macOS-x86_64.zip
-      - uses: actions/upload-artifact@v4
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v5
         with:
           name: DiscImageManager-macOS-arm64
           path: DiscImageManager-macOS-arm64.zip
+          if-no-files-found: error
