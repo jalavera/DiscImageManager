@@ -39,7 +39,7 @@ jobs:
       - name: Build macOS Apple Silicon (aarch64)
         working-directory: LazarusSource
         run: |
-          lazbuild -B --ws=cocoa --bm="Release macOS ARM" DiscImageManager.lpi
+          lazbuild -B --ws=cocoa --compiler=/usr/local/bin/fpc --bm="Release macOS ARM" DiscImageManager.lpi
           mv lib/Release/aarch64-darwin/DiscImageManager ../DIM-arm64
       - name: Make app bundles
         run: |
