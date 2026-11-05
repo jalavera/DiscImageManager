@@ -347,9 +347,10 @@ begin
   //Read the attribute byte
   attr:=ReadByte($B+index*32,buffer);
   //Is it the volume name?
-  if(status<>$E5)and(attr AND$8=$8)then
-  begin
-   volname:=ReadString(Fdosroot,-11,buffer);
+ if(status<>$E5)and(attr<>$0F)and(attr AND$8=$8)then
+ begin
+  volname:=ReadString(index*32,-11,buffer);
+  RemoveSpaces(volname);
    FDOSVolInRoot:=True;//Volume name is in the root flag
    //Has it already been set?
    if FPartitions[Length(FPartitions)-1].Name='' then
