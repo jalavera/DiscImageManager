@@ -435,6 +435,7 @@ type
 {$IFNDEF DIMCONSOLE}
   function IntToStrComma(size: Int64): String;
   procedure OpenImage(filename: String);
+  function OfferMacFileRemoval: Boolean;
 {$ENDIF}
   procedure ParseCommand(var Command: TStringArray);
 {$IFNDEF DIMCONSOLE}
@@ -1836,8 +1837,9 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.OpenImage(filename: String);
 var
- dir   : Cardinal=0;
- entry : Cardinal=0;
+ dir      : Cardinal=0;
+ entry    : Cardinal=0;
+ macclean : Boolean=False;
 begin
  WriteToDebug('MainForm.OpenImage('+filename+')');
  //Show a progress message
@@ -1888,8 +1890,16 @@ begin
           +IntToStr(Image.Disc[dir].Entries[entry].DirRef)+')');
    end;
   end;
+  //Offer to remove any macOS metadata files (.DS_Store, ._*, .fseventsd...)
+  macclean:=OfferMacFileRemoval;
   //Update the display
   ShowNewImage(Image.Filename);
+  //Mark the image as changed, if anything was removed
+  if macclean then
+  begin
+   HasChanged:=True;
+   UpdateImageInfo;
+  end;
  end
  else
   ReportError('"'+ExtractFilename(filename)
@@ -1897,6 +1907,54 @@ begin
                  +ApplicationTitle+' can open.');
  //Close the progress message
  ProgressForm.Hide;
+end;
+
+{------------------------------------------------------------------------------}
+//Offer to remove macOS metadata files from DOS images
+{------------------------------------------------------------------------------}
+function TMainForm.OfferMacFileRemoval: Boolean;
+var
+ dir   : Integer=0;
+ entry : Integer=0;
+ index : Integer=0;
+ names : String='';
+ files : array of String=nil;
+const
+ maxlist = 8; //Maximum number of names to show in the message
+begin
+ Result:=False;
+ WriteToDebug('MainForm.OfferMacFileRemoval');
+ //Only for DOS images, and only when we can ask the user
+ if(Image.MajorFormatNumber<>diDOSPlus)or(not ErrorReporting)then exit;
+ //Look for any files or directories whose name starts with a '.'
+ if Length(Image.Disc)>0 then
+  for dir:=0 to Length(Image.Disc)-1 do
+   if not Image.Disc[dir].Deleted then
+    if Length(Image.Disc[dir].Entries)>0 then
+     for entry:=0 to Length(Image.Disc[dir].Entries)-1 do
+      if LeftStr(Image.Disc[dir].Entries[entry].Filename,1)='.' then
+      begin
+       SetLength(files,Length(files)+1);
+       files[Length(files)-1]:=GetImageFilename(dir,entry);
+       if Length(files)<=maxlist then
+        names:=names+LineEnding+'   '+files[Length(files)-1];
+      end;
+ if Length(files)=0 then exit;
+ if Length(files)>maxlist then names:=names+LineEnding+'   ...';
+ //Hide the progress window while we ask
+ ProgressForm.Hide;
+ if AskConfirm('This image contains '+IntToStr(Length(files))
+              +' file(s) or folder(s) whose names start with a dot:'+names
+              +LineEnding+LineEnding
+              +'These are normally created by macOS (for example, when the '
+              +'image is mounted in the Finder) and are not needed by DOS. '
+              +'They only take up space on the disc.'+LineEnding+LineEnding
+              +'Do you want to delete them? Nothing is written to the image '
+              +'file until you save it.',
+              ['Delete','Keep'])=mrOK then
+  for index:=0 to Length(files)-1 do
+   //Files inside a folder that has already been deleted will fail - ignore
+   if Image.DeleteFile(files[index]) then Result:=True;
 end;
 
 {------------------------------------------------------------------------------}
