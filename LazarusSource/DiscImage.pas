@@ -1154,6 +1154,8 @@ type
   property RootAddress:         Cardinal      read GetRootAddress;
   property ScanSubDirs:         Boolean       read FScanSubDirs
                                               write FScanSubDirs;
+  property DOSUseSFN:           Boolean       read FDOSUseSFN
+                                              write FDOSUseSFN;
   {$IFDEF CPU64}
   property Streamed:            Boolean       read FStreamed;
   property StreamThreshold:     Int64         read FStreamThreshold
