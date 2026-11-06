@@ -436,6 +436,8 @@ type
   function IntToStrComma(size: Int64): String;
   procedure OpenImage(filename: String);
   function OfferMacFileRemoval: Boolean;
+  function ChooseDOSPartition(always: Boolean): Boolean;
+  procedure SelectDOSPartitionClick(Sender: TObject);
 {$ENDIF}
   procedure ParseCommand(var Command: TStringArray);
 {$IFNDEF DIMCONSOLE}
@@ -1894,6 +1896,8 @@ begin
           +IntToStr(Image.Disc[dir].Entries[entry].DirRef)+')');
    end;
   end;
+  //More than one DOS partition (hard disc image)? Ask which one to use
+  ChooseDOSPartition(False);
   //Offer to remove any macOS metadata files (.DS_Store, ._*, .fseventsd...)
   macclean:=OfferMacFileRemoval;
   //Update the display
@@ -1911,6 +1915,66 @@ begin
                  +ApplicationTitle+' can open.');
  //Close the progress message
  ProgressForm.Hide;
+end;
+
+{------------------------------------------------------------------------------}
+//Choose which DOS partition to work with (hard disc images with an MBR)
+//always: also report when there is nothing to choose (menu option)
+{------------------------------------------------------------------------------}
+function TMainForm.ChooseDOSPartition(always: Boolean): Boolean;
+var
+ list  : TStringList=nil;
+ index : Integer=0;
+ choice: Integer=-1;
+begin
+ Result:=False;
+ WriteToDebug('MainForm.ChooseDOSPartition');
+ if not ErrorReporting then exit;
+ //Nothing to choose from
+ if Image.DOSPartitionCount=0 then
+ begin
+  if always then ShowInfo('This image does not have a partition table.');
+  exit;
+ end;
+ if Image.DOSPartitionCount=1 then
+ begin
+  if always then ShowInfo('This image has only one DOS partition:'+LineEnding
+                         +Image.DOSPartitionDescription(0));
+  exit;
+ end;
+ //Hide the progress window while we ask
+ ProgressForm.Hide;
+ list:=TStringList.Create;
+ try
+  for index:=0 to Image.DOSPartitionCount-1 do
+   list.Add(Image.DOSPartitionDescription(index));
+  choice:=InputCombo('Select DOS Partition',
+                     'This image contains '+IntToStr(Image.DOSPartitionCount)
+                    +' DOS partitions. Which one do you want to work with?',
+                     list);
+ finally
+  list.Free;
+ end;
+ //Open the chosen one, if it is not the one already open
+ if(choice>=0)and(choice<>Image.DOSPartition)then
+  Result:=Image.SelectDOSPartition(choice);
+end;
+
+{------------------------------------------------------------------------------}
+//Select DOS Partition menu option
+{------------------------------------------------------------------------------}
+procedure TMainForm.SelectDOSPartitionClick(Sender: TObject);
+var
+ changed: Boolean=False;
+begin
+ //Keep the changed flag - changes to the other partition are still in memory
+ changed:=HasChanged;
+ if ChooseDOSPartition(True) then
+ begin
+  ShowNewImage(Image.Filename);
+  HasChanged:=changed;
+  UpdateImageInfo;
+ end;
 end;
 
 {------------------------------------------------------------------------------}
@@ -2167,6 +2231,11 @@ begin
    else
     ImageDetails.Panels[5].Text:='Single Sided'
   else
+   //Partitioned DOS hard disc image?
+   if Image.DOSPartitionCount>0 then
+    ImageDetails.Panels[5].Text:='Partition '+IntToStr(Image.DOSPartition+1)
+                                +' of '+IntToStr(Image.DOSPartitionCount)
+   else
     ImageDetails.Panels[5].Text:='';
   //Map type (ADFS/AmigaDOS only)
   ImageDetails.Panels[6].Text:=Image.MapTypeString;
@@ -3368,6 +3437,8 @@ begin
 //This is called when the form is created - i.e. when the application is created
 {------------------------------------------------------------------------------}
 procedure TMainForm.FormCreate(Sender: TObject);
+var
+ menuitem: TMenuItem=nil;
  function CreateTickBox(LCaption: String; LParent: TPanel): TRISCOSTickBox;
  begin
   Result:=TRISCOSTickBox.Create(LParent as TComponent);
@@ -3526,6 +3597,13 @@ begin
 {$ENDIF}
  WriteToDebug('If you are experiencing any issues, please email this to '+
               'gerald@hollypops.co.uk with a description of your issue.');
+{$IFNDEF DIMCONSOLE}
+ //Add the option to select the DOS partition (hard disc images)
+ menuitem:=TMenuItem.Create(PartitionMenu);
+ menuitem.Caption:='Select DOS Partition...';
+ menuitem.OnClick:=@SelectDOSPartitionClick;
+ PartitionMenu.Add(menuitem);
+{$ENDIF}
  //Reset the changed variable
  HasChanged:=False;
 end;
