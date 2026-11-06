@@ -881,8 +881,8 @@ begin
   //Read the file data
   buffer:=ReadDOSObject(FDisc[dir].Entries[entry].Sector,
                         FDisc[dir].Entries[entry].Length);
-  //Return a result, +ve or -ve
-  Result:=Length(buffer)>0;
+  //Return a result, +ve or -ve (a zero length file is fine, with no data)
+  Result:=(Length(buffer)>0)or(FDisc[dir].Entries[entry].Length=0);
  end;
 end;
 

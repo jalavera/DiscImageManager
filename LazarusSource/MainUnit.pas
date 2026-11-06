@@ -430,6 +430,7 @@ type
   function ImportFiles(NewImage: TDiscImage;Dialogue: Boolean=True;
                                                 Errors: Boolean=True): Integer;
 {$ENDIF}
+  function MapImportPath(path: String): String;
   function ImportFile(NewImage: TDiscImage;dir,entry: Integer;
           method: String='Importing';rootname: String='$';Errors: Boolean=True): Integer;
 {$IFNDEF DIMCONSOLE}
@@ -543,6 +544,9 @@ type
 {$ENDIF}
    //Currently selected directory, when in console mode
    Fcurrdir            :Integer;
+   //Directories renamed while importing (old path -> new path)
+   FImportFrom,
+   FImportTo           :array of String;
   const
 {$IFNDEF DIMCONSOLE}
    //These point to certain icons used when no filetype is found, or non-ADFS
@@ -3976,6 +3980,9 @@ begin
  Result:=0;
  ResetDirEntry(newentry);
  WriteToDebug('MainForm.ImportFiles');
+ //No directories have been renamed yet
+ SetLength(FImportFrom,0);
+ SetLength(FImportTo,0);
  //Read in the catalogue of the new image, if there is none
  if Length(NewImage.Disc)=0 then
  begin
@@ -4270,9 +4277,27 @@ end;
 {------------------------------------------------------------------------------}
 //Import a file into the current image
 {------------------------------------------------------------------------------}
+function TMainForm.MapImportPath(path: String): String;
+var
+ i: Integer=0;
+begin
+ Result:=path;
+ //Go through the renamed directories, latest first
+ for i:=Length(FImportFrom)-1 downto 0 do
+  if(Result=FImportFrom[i])
+  or(LeftStr(Result,Length(FImportFrom[i])+1)=FImportFrom[i]+Image.DirSep)then
+   Result:=FImportTo[i]+Copy(Result,Length(FImportFrom[i])+1);
+end;
+
+{------------------------------------------------------------------------------}
+//Import a single file or directory from another image
+{------------------------------------------------------------------------------}
 function TMainForm.ImportFile(NewImage: TDiscImage; dir,entry: Integer;
            method: String='Importing';rootname: String='$';Errors: Boolean=True): Integer;
 var
+{$IFNDEF DIMCONSOLE}
+ NewNode   : TTreeNode=nil;
+{$ENDIF}
  newentry  : TDirEntry=();
  temp      : String='';
  tempattr  : String='';
@@ -4363,6 +4388,8 @@ begin
                                 ,NewImage.RootName
                                 ,rootname
                                 ,[rfReplaceAll,rfIgnoreCase]);
+ //If the parent directory had to be renamed when it was added, follow it
+ newentry.Parent:=MapImportPath(newentry.Parent);
  ok:=True;
 {$IFNDEF DIMCONSOLE}
  if Fguiopen then
@@ -4391,10 +4418,27 @@ begin
   if(newentry.DirRef>=0)and(Image.DirectoryCapable)then
    if newentry.Filename<>rootname then //Create the directory
    begin
-    newentry.Attributes:='DLR';
+    //DOS to DOS keeps the attributes (e.g. hidden), otherwise use defaults
+    if(Image.MajorFormatNumber<>diDOSPlus)
+    or(NewImage.MajorFormatNumber<>diDOSPlus)then
+     newentry.Attributes:='DLR';
 {$IFNDEF DIMCONSOLE}
     if Fguiopen then
-     CreateDirectory(newentry.Filename,newentry.Attributes)
+    begin
+     NewNode:=CreateDirectory(newentry.Filename,newentry.Attributes);
+     //The name may have changed (e.g. '.Trashes' with short filenames only),
+     //so make a note so that its contents end up in the right place
+     if NewNode<>nil then
+      if NewNode.Text<>newentry.Filename then
+      begin
+       SetLength(FImportFrom,Length(FImportFrom)+1);
+       SetLength(FImportTo,Length(FImportTo)+1);
+       FImportFrom[Length(FImportFrom)-1]:=newentry.Parent+Image.DirSep
+                                          +newentry.Filename;
+       FImportTo[Length(FImportTo)-1]:=newentry.Parent+Image.DirSep
+                                      +NewNode.Text;
+      end;
+    end
     else
 {$ENDIF}
      Image.CreateDirectory(newentry.Filename,
@@ -6358,6 +6402,7 @@ function TMainForm.CreateDirectory(dirname, attr: String): TTreeNode;
 var
  parentdir: String='$';
  index    : Integer=0;
+ pref     : Integer=0;
  Node     : TTreeNode=nil;
 // dir,entry:Cardinal;
 begin
@@ -6375,11 +6420,19 @@ begin
   //Ensure that the directory has been read in
   if not TMyTreeNode(DirList.Selections[0]).BeenRead then
    ReadInDirectory(DirList.Selections[0]);
+  //Directory reference of the parent
+  pref:=TMyTreeNode(DirList.Selections[0]).DirRef;
   //Add it
   index:=Image.CreateDirectory(dirname,parentdir,attr);
   //Function returns pointer to next item (or parent if no children)
   if index>-1 then //Directory added OK
   begin
+   //DOS may have had to change the name (e.g. to a short filename), so show
+   //the name it actually has in the image
+   if Image.MajorFormatNumber=diDOSPlus then
+    if(pref>=0)and(pref<Length(Image.Disc))then
+     if index<Length(Image.Disc[pref].Entries)then
+      dirname:=Image.Disc[pref].Entries[index].Filename;
    //Mark as changed
    if Image.MajorFormatNumber<>diSpark then HasChanged:=True;
    //Create the node as a file
