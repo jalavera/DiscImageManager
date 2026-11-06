@@ -1200,8 +1200,6 @@ const
  procedure AdjustDirLength(entries: Integer);
  begin
   inc(numentries,entries);
-  //Make a note of the starting length
-  dirlenst:=Length(buffer);
   //Work out what it should be
   dirlen:=numentries*$20; //An extra one for the terminator
   dirlen:=((dirlen+(cluster_size*dosalloc))div(cluster_size*dosalloc))
@@ -1264,6 +1262,8 @@ begin
   //Extend or contract the buffer, if necessary
   if(not isroot)or(FATType=diFAT32)then
   begin
+   //Make a note of the starting length (before any long filename entries)
+   dirlenst:=Length(buffer);
    AdjustDirLength(Length(FDisc[dir].Entries));
    //Skip the first two entries, unless it is root
    if not isroot then ptr:=2;//First two entries are '.' and '..'
@@ -1734,7 +1734,14 @@ begin
     if not FDisc[index].BeenRead then ReadDirectory(filename);
     //Recursively delete the contents
     while(Length(FDisc[index].Entries)>0)and(success)do
+    begin
      success:=DeleteDOSFile(filename+DirSep(side)+FDisc[index].Entries[0].Filename);
+     //Removing a sub directory moves the others about, so find this one again
+     if success then
+      if FileExists(filename,dir,entry) then
+       index:=FDisc[dir].Entries[entry].DirRef
+      else success:=False;
+    end;
    end;
    //Remove the entry from the directory
    if success then
@@ -1744,8 +1751,13 @@ begin
     DeAllocateDOSClusters(0,clusters);
     //Remove the entry
     RemoveDOSEntry(dir,entry);
-    //Update all the directory references
-    if index>=0 then UpdateDirRef(index);
+    //Remove the directory from the internal array, then update all the
+    //directory references (otherwise they point at the wrong directories)
+    if index>=0 then
+    begin
+     RemoveDirectory(index);
+     UpdateDirRef(index);
+    end;
    end;
    //Return a result
    Result:=success;

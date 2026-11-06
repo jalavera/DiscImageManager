@@ -7273,7 +7273,11 @@ function TMainForm.DeleteFile(confirm: Boolean): Boolean;
 var
  LDirRef : Integer=0;
  j       : Integer=0;
+ k       : Integer=0;
  nodes   : Integer=0;
+ dircount: Integer=0;
+ shift   : Integer=0;
+ subdirs : array of Integer=nil;
  LIsDir  : Boolean=False;
  R       : Boolean=False;
  ok      : Boolean=False;
@@ -7312,6 +7316,18 @@ begin
      LDirRef:=TMyTreeNode(DirList.Selections[0]).DirRef
     else
      LDirRef:=-1;
+    //Make a note of all the directories that will go with it
+    SetLength(subdirs,0);
+    if LIsDir then
+     for j:=0 to DirList.Items.Count-1 do
+      if(DirList.Items[j]=DirList.Selections[0])
+      or(DirList.Items[j].HasAsParent(DirList.Selections[0]))then
+       if TMyTreeNode(DirList.Items[j]).IsDir then
+       begin
+        SetLength(subdirs,Length(subdirs)+1);
+        subdirs[Length(subdirs)-1]:=TMyTreeNode(DirList.Items[j]).DirRef;
+       end;
+    dircount:=Length(Image.Disc);
     //Perform the deletion
     if (Image.MajorFormatNumber<>diAcornUEF)
     and(Image.MajorFormatNumber<>diAcornRFS)then
@@ -7322,6 +7338,25 @@ begin
     begin
      WriteToDebug('MainForm.DeleteFile: File deletion OK');
      //Update the directory references
+     if(LIsDir)and(Length(Image.Disc)<dircount)then
+     begin
+      //The directories have been removed from the image's list, so move each
+      //remaining reference down by the number of directories removed below it
+      for j:=0 to DirList.Items.Count-1 do
+      begin
+       shift:=0;
+       for k:=0 to Length(subdirs)-1 do
+        if TMyTreeNode(DirList.Items[j]).DirRef>subdirs[k] then inc(shift);
+       TMyTreeNode(DirList.Items[j]).DirRef:=
+                                     TMyTreeNode(DirList.Items[j]).DirRef-shift;
+       shift:=0;
+       for k:=0 to Length(subdirs)-1 do
+        if TMyTreeNode(DirList.Items[j]).ParentDir>subdirs[k] then inc(shift);
+       TMyTreeNode(DirList.Items[j]).ParentDir:=
+                                  TMyTreeNode(DirList.Items[j]).ParentDir-shift;
+      end;
+     end
+     else
      if LIsDir then
      begin
       for j:=0 to DirList.Items.Count-1 do
