@@ -2,7 +2,7 @@ program dimtest;
 {Opens a disc image with the TDiscImage class and lists what it finds.
  Used by the "Test images" workflow.}
 {$mode objfpc}{$H+}
-uses SysUtils, DiscImage;
+uses SysUtils, Classes, DiscImage;
 type
  TProgress = class
   procedure Show(Fupdate: String);
@@ -30,6 +30,7 @@ end;
 function DefragTest(Image: TDiscImage): Boolean;
 var
  Old, Check: TDiscImage;
+ A, B      : TStringList;
  d,e,r     : Integer;
  entry     : TDirEntry;
  buffer    : TDIByteArray;
@@ -82,7 +83,12 @@ begin
  if Listing(Check)<>before then
  begin
   WriteLn('Defrag: FAIL - the defragged image is different');
-  WriteLn('--- before'+LineEnding,before,'--- after'+LineEnding,Listing(Check));
+  A:=TStringList.Create; B:=TStringList.Create;
+  A.Text:=before; B.Text:=Listing(Check);
+  for d:=0 to A.Count-1 do if B.IndexOf(A[d])<0 then WriteLn('  missing: ',A[d]);
+  for d:=0 to B.Count-1 do if A.IndexOf(B[d])<0 then WriteLn('  extra  : ',B[d]);
+  WriteLn('  ',A.Count,' entries before, ',B.Count,' after');
+  A.Free; B.Free;
   Result:=False;
  end
  else WriteLn('Defrag: OK, ',Length(Check.Disc),' directories match');
