@@ -189,6 +189,9 @@ begin
   if GetMajorFormatNumber=diSpark then SparkFile.Free;
   //Blank off the variables
   ResetVariables;
+  //Forget any DOS partitions from the previous image
+  SetLength(FDOSPartList,0);
+  FDOSPartChoice:=0;
   {$IFDEF CPU64}
   //Large images are streamed from disc on demand rather than loaded entirely
   //into RAM (which would exhaust memory and overflow the 32-bit addressing).
