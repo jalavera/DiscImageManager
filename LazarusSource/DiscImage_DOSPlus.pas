@@ -54,14 +54,28 @@ begin
   if FFormat=diInvalidImg then //Only check if nothing found
   begin
    found:=IDDOSPartition($0000);
-   //Not there? Then look for a DOS partition in an MBR partition table, as
-   //found on hard disc images (e.g. from PC emulators)
-   if(not found)and(ReadByte($1FE)=$55)and(ReadByte($1FF)=$AA)then
-    for index:=0 to 3 do
+   if found then SetLength(FDOSPartList,0) //Not a partitioned disc
+   else
+   begin
+    //Not there? Then look for DOS partitions in an MBR partition table, as
+    //found on hard disc images (e.g. from PC emulators)
+    ScanMBRPartitions;
+    if Length(FDOSPartList)>0 then
+    begin
+     //Open the chosen partition
+     if(FDOSPartChoice<0)or(FDOSPartChoice>=Length(FDOSPartList))then
+      FDOSPartChoice:=0;
+     found:=IDDOSPartition(FDOSPartList[FDOSPartChoice].Offset);
+     //Not valid? Then use the first one that is
      if not found then
-      if ReadByte($1BE+index*$10+4)in[$01,$04,$06,$0B,$0C,$0E]then
-       if Read32b($1BE+index*$10+8)>0 then
-        found:=IDDOSPartition(Read32b($1BE+index*$10+8)*$200);
+      for index:=0 to Length(FDOSPartList)-1 do
+       if not found then
+       begin
+        found:=IDDOSPartition(FDOSPartList[index].Offset);
+        if found then FDOSPartChoice:=index;
+       end;
+    end;
+   end;
    if found then
    begin
     //ReadDOSHeader;
@@ -77,6 +91,128 @@ begin
   Result:=GetMajorFormatNumber=diDOSPlus;
   FHasDirs:=Result;
  end;
+end;
+
+{-------------------------------------------------------------------------------
+Find the DOS partitions in an MBR partition table, including the logical drives
+inside an extended partition (hard disc images)
+-------------------------------------------------------------------------------}
+procedure TDiscImage.ScanMBRPartitions;
+var
+ index : Integer=0;
+ ptype : Byte=0;
+ start : Cardinal=0;
+ size  : Cardinal=0;
+ ext   : Cardinal=0;
+ ebr   : Cardinal=0;
+ nxt  : Cardinal=0;
+ count : Integer=0;
+const
+ DOSTypes = [$01,$04,$06,$0B,$0C,$0E];//FAT12, FAT16 and FAT32 partitions
+ ExtTypes = [$05,$0F,$85];            //Extended partitions
+ procedure AddPartition(lba,secs: Cardinal;pt: Byte;logical: Boolean);
+ begin
+  //Ignore anything that is beyond the end of the image
+  if QWord(lba)*$200>=GetDataLength then exit;
+  SetLength(FDOSPartList,Length(FDOSPartList)+1);
+  FDOSPartList[Length(FDOSPartList)-1].Offset :=lba*$200;
+  FDOSPartList[Length(FDOSPartList)-1].Size   :=secs*$200;
+  FDOSPartList[Length(FDOSPartList)-1].PType  :=pt;
+  FDOSPartList[Length(FDOSPartList)-1].Logical:=logical;
+ end;
+begin
+ SetLength(FDOSPartList,0);
+ //Must have the boot signature
+ if GetDataLength<$200 then exit;
+ if(ReadByte($1FE)<>$55)or(ReadByte($1FF)<>$AA)then exit;
+ //Primary partitions first
+ for index:=0 to 3 do
+ begin
+  ptype:=ReadByte($1BE+index*$10+4);
+  start:=Read32b($1BE+index*$10+8);
+  size :=Read32b($1BE+index*$10+12);
+  if(ptype in DOSTypes)and(start>0)then AddPartition(start,size,ptype,False);
+  if(ptype in ExtTypes)and(start>0)and(ext=0)then ext:=start;
+ end;
+ //Then the logical drives, following the chain of extended boot records
+ if ext>0 then
+ begin
+  ebr:=ext;
+  count:=0;
+  repeat
+   inc(count);
+   nxt:=0;
+   if QWord(ebr)*$200+$200>GetDataLength then break;
+   if(ReadByte(ebr*$200+$1FE)<>$55)or(ReadByte(ebr*$200+$1FF)<>$AA)then break;
+   //First entry is the logical drive (relative to this EBR)
+   ptype:=ReadByte(ebr*$200+$1BE+4);
+   start:=Read32b(ebr*$200+$1BE+8);
+   size :=Read32b(ebr*$200+$1BE+12);
+   if(ptype in DOSTypes)and(start>0)then AddPartition(ebr+start,size,ptype,True);
+   //Second entry points to the next EBR (relative to the extended partition)
+   if ReadByte(ebr*$200+$1CE+4)in ExtTypes then
+    nxt:=Read32b(ebr*$200+$1CE+8);
+   if nxt>0 then ebr:=ext+nxt;
+  until(nxt=0)or(count>=64);
+ end;
+end;
+
+{-------------------------------------------------------------------------------
+Number of DOS partitions found in the MBR (0 if the image is not partitioned)
+-------------------------------------------------------------------------------}
+function TDiscImage.DOSPartitionCount: Integer;
+begin
+ Result:=Length(FDOSPartList);
+end;
+
+{-------------------------------------------------------------------------------
+Description of one of the DOS partitions found in the MBR
+-------------------------------------------------------------------------------}
+function TDiscImage.DOSPartitionDescription(index: Integer): String;
+var
+ primary: Integer=0;
+ logical: Integer=0;
+ i      : Integer=0;
+ fat    : String='';
+begin
+ Result:='';
+ if(index<0)or(index>=Length(FDOSPartList))then exit;
+ //Count the primaries and logicals up to this one
+ for i:=0 to index do
+  if FDOSPartList[i].Logical then inc(logical) else inc(primary);
+ if FDOSPartList[index].Logical then
+  Result:='Logical drive '+IntToStr(logical)
+ else
+  Result:='Primary partition '+IntToStr(primary);
+ case FDOSPartList[index].PType of
+  $01               : fat:='FAT12';
+  $04,$06,$0E       : fat:='FAT16';
+  $0B,$0C           : fat:='FAT32';
+ end;
+ Result:=Result+' - '+fat+', '
+        +FormatFloat('0.0',FDOSPartList[index].Size/(1024*1024))+' MB';
+end;
+
+{-------------------------------------------------------------------------------
+Open a different DOS partition from the MBR, without reloading the image (any
+changes made to the other partitions are kept)
+-------------------------------------------------------------------------------}
+function TDiscImage.SelectDOSPartition(index: Integer): Boolean;
+var
+ oldname: String='';
+begin
+ Result:=False;
+ if(index<0)or(index>=Length(FDOSPartList))then exit;
+ FDOSPartChoice:=index;
+ //Re-ID-ing resets the image filename, so keep a copy
+ oldname:=imagefilename;
+ //Re-ID the image (this will now pick the chosen partition) and read it
+ if IDImage then
+ begin
+  ReadImage;
+  Result:=FDOSPartChoice=index;
+ end;
+ imagefilename:=oldname;
 end;
 
 {-------------------------------------------------------------------------------
