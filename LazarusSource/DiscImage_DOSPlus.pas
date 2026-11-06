@@ -1572,7 +1572,8 @@ begin
    //Set the length
    file_details.Length:=Length(buffer);
    //Will if fit on the disc?
-   if FPartitions[partition].FreeSpace>file_details.Length then
+   if(FPartitions[partition].FreeSpace>file_details.Length)
+   or(file_details.Length=0)then
    begin
     Result:=-7; //Map (directory) full
     //Is there enough space in the directory?
@@ -1582,6 +1583,16 @@ begin
     if space then
     begin
      Result:=-5;//Unknown error
+     //A zero length file has no clusters, just a directory entry
+     if(file_details.Length=0)and(Pos('D',file_details.Attributes)=0)then
+     begin
+      file_details.Sector:=0;
+      file_details.DirRef:=-1;
+      if file_details.TimeStamp=0 then file_details.TimeStamp:=Now;
+      Result:=InsertDOSEntry(dir,file_details);
+      ReadDOSFSM;
+      exit;
+     end;
      //Allocate some space
      AllocateDOSClusters(file_details.Length,fragments);
      //Did it allocate anything?
@@ -1607,8 +1618,8 @@ begin
       end
       else //Mark as not a directory
        file_details.DirRef:=-1;
-      //Set the date
-      file_details.TimeStamp:=Now;
+      //Set the date, unless it already has one (e.g. copied from another image)
+      if file_details.TimeStamp=0 then file_details.TimeStamp:=Now;
       //Write the data to the image
       if WriteDOSObject(buffer,fragments) then
       begin

@@ -617,7 +617,9 @@ begin
  //Get the length of data to be written
  count:=file_details.Length;
  //Only write a file if there is actually any data to be written
- if(count>0)and((Length(FPartitions)>0)or(GetMajorFormatNumber=diSpark))then
+ //(DOS can have zero length files, as they are just a directory entry)
+ if((count>0)or(GetMajorFormatNumber=diDOSPlus))
+ and((Length(FPartitions)>0)or(GetMajorFormatNumber=diSpark))then
  begin
   if GetMajorFormatNumber<>diSpark then
    file_details.Side:=file_details.Side mod Length(FPartitions);
