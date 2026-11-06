@@ -491,7 +491,9 @@ begin
  created:=False;
  //Get the status byte (first byte of the filename)
  status:=ReadByte(index*32,buffer);
- while status<>0 do
+ //Stop at the end of the list, or at the end of the directory if it is full
+ //(a full directory has no terminating entry)
+ while(status<>0)and(index*32<Length(buffer))do
  begin
   //Read the attribute byte
   attr:=ReadByte($B+index*32,buffer);
