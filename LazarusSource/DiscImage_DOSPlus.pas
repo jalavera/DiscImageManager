@@ -1069,8 +1069,9 @@ begin
   or(LowerCase(GetParent(dir)+DirSep(side)+newname)=LowerCase(oldname))then
   begin
    Result:=-1; //Unknown error
-   //Change the name
+   //Change the name (it has been validated to 8.3, so is also the short name)
    FDisc[dir].Entries[entry].Filename:=newname;
+   FDisc[dir].Entries[entry].ShortFilename:=newname;
    //And extension
    if Pos('.',newname)>0 then
    begin
@@ -1276,10 +1277,19 @@ begin
    begin
     //Write the volume name here, if this is where it was
     if(writevol)and(FDOSVolEntry>=0)and(ptr>=FDOSVolEntry)then WriteVolumeEntry;
-    //Short Filename
-    temp:=DOSShortFilename(dirname,
-                           FDisc[dir].Entries[index].Filename,
-                           FDisc[dir].Entries[index].ShortFilename);
+    //Short Filename - keep the one it already has, so that entries that have
+    //not been changed are written back as they were, unless another entry in
+    //this directory has the same one
+    temp:=FDisc[dir].Entries[index].ShortFilename;
+    if temp<>'' then
+     for partindex:=0 to Length(FDisc[dir].Entries)-1 do
+      if(partindex<>index)
+      and(UpperCase(FDisc[dir].Entries[partindex].ShortFilename)=UpperCase(temp))then
+       temp:='';
+    if temp='' then
+     temp:=DOSShortFilename(dirname,
+                            FDisc[dir].Entries[index].Filename,
+                            FDisc[dir].Entries[index].ShortFilename);
     //Remove the extension
     if Pos('.',temp)>1 then temp:=LeftStr(temp,Pos('.',temp)-1);
     //Change the first character, if 0xE5
@@ -1295,8 +1305,9 @@ begin
      else
       chsum:=(chsum>>1)+Ord(SFN[partindex]);
     //Long filename
-    if(FDisc[dir].Entries[index].Filename<>FDisc[dir].Entries[index].ShortFilename)
-    and(not FDOSUseSFN)then
+    //(with 'no long filenames' set, new and renamed entries are given their
+    //short name, so only long names that are already on the disc are kept)
+    if FDisc[dir].Entries[index].Filename<>FDisc[dir].Entries[index].ShortFilename then
     begin
      //Set up the array for the various parts of the filename
      SetLength(parts,Ceil(Length(FDisc[dir].Entries[index].Filename)/13));
