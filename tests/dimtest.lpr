@@ -132,6 +132,53 @@ begin
  Old.Free;
 end;
 
+{Renames one plain entry in the root, saves and reloads, and checks that
+ nothing else changed (e.g. long names such as .Trashes must be kept)}
+function RenameTest(filename: String;SFN: Boolean): Boolean;
+var
+ Img, Check: TDiscImage;
+ A, B      : TStringList;
+ e         : Integer;
+ oldn,newn,
+ tmp       : String;
+begin
+ Result:=True;
+ Img:=TDiscImage.Create;
+ Img.DOSUseSFN:=SFN;
+ Img.LoadFromFile(filename);
+ Img.ProgressIndicator:=nil;
+ //Find the last root entry with no long name
+ oldn:='';
+ for e:=0 to Length(Img.Disc[0].Entries)-1 do
+  if Img.Disc[0].Entries[e].Filename=Img.Disc[0].Entries[e].ShortFilename then
+   oldn:=Img.Disc[0].Entries[e].Filename;
+ if oldn='' then begin Img.Free; exit; end;
+ newn:=oldn;
+ if newn[Length(newn)]='Z' then newn[Length(newn)]:='Y' else newn[Length(newn)]:='Z';
+ tmp:=newn;
+ A:=TStringList.Create; B:=TStringList.Create;
+ A.Text:=StringReplace(Listing(Img),'A:\'+oldn,'A:\'+newn,[rfReplaceAll]);
+ if Img.RenameFile('A:\'+oldn,tmp)<0 then
+ begin
+  WriteLn('Rename: FAIL renaming ',oldn);
+  Result:=False;
+ end;
+ Check:=TDiscImage.Create(Img);
+ B.Text:=Listing(Check);
+ A.Sort; B.Sort;
+ if A.Text<>B.Text then
+ begin
+  WriteLn('Rename (short filenames ',SFN,'): FAIL - other names changed');
+  for e:=0 to A.Count-1 do if B.IndexOf(A[e])<0 then WriteLn('  missing: ',A[e]);
+  for e:=0 to B.Count-1 do if A.IndexOf(B[e])<0 then WriteLn('  extra  : ',B[e]);
+  Result:=False;
+ end
+ else WriteLn('Rename (short filenames ',SFN,'): OK, ',oldn,' -> ',tmp);
+ A.Free; B.Free;
+ Check.Free;
+ Img.Free;
+end;
+
 var
  Image   : TDiscImage;
  Progress: TProgress;
@@ -159,6 +206,11 @@ begin
        WriteLn('   ',Image.Disc[d].Entries[e].Filename);
     end;
     if(ParamStr(2)='defrag')and(not DefragTest(Image,False))then ExitCode:=3;
+    if(ParamStr(2)='defrag')then
+    begin
+     if not RenameTest(ParamStr(1),False) then ExitCode:=3;
+     if not RenameTest(ParamStr(1),True) then ExitCode:=3;
+    end;
     //Again, on a fresh copy, with short filenames only
     if ParamStr(2)='defrag' then
     begin
