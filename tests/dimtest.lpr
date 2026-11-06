@@ -54,6 +54,24 @@ begin
  Result:=True;
  SetLength(MapFrom,0);
  SetLength(MapTo,0);
+ //With short filenames only, the GUI first removes all the long names
+ if SFN then
+ begin
+  Image.RemoveDOSLongFilenames;
+  Check:=TDiscImage.Create(Image);
+  r:=0;
+  for d:=0 to Length(Check.Disc)-1 do
+   for e:=0 to Length(Check.Disc[d].Entries)-1 do
+    if Check.Disc[d].Entries[e].Filename<>Check.Disc[d].Entries[e].ShortFilename then
+    begin
+     WriteLn('Defrag: FAIL - long name left: ',Check.GetParent(d),'\',
+             Check.Disc[d].Entries[e].Filename);
+     inc(r);
+    end;
+  if r>0 then Result:=False
+  else WriteLn('Defrag: all long names removed');
+  Check.Free;
+ end;
  before:=Listing(Image);
  Old:=TDiscImage.Create(Image);
  Old.ProgressIndicator:=nil;
@@ -117,7 +135,7 @@ begin
  A.Sort; B.Sort;
  //(a long name that only differs in case from the short name, e.g. no_log,
  //is written as the short name, which DOS does not mind)
- if((not SFN)and(UpperCase(A.Text)<>UpperCase(B.Text)))or(A.Count<>B.Count)then
+ if(UpperCase(A.Text)<>UpperCase(B.Text))or(A.Count<>B.Count)then
  begin
   WriteLn('Defrag: FAIL - the defragged image is different');
   for d:=0 to A.Count-1 do if B.IndexOf(A[d])<0 then WriteLn('  missing: ',A[d]);
