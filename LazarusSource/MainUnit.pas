@@ -510,6 +510,8 @@ type
    FScanSubDirs        :Boolean;
    //Open DOS Partitions on ADFS
    FOpenDOS            :Boolean;
+   //Only use short filenames on DOS images (no VFAT long filenames)
+   FDOSUseSFN          :Boolean;
    //Create *.dsc files with ADFS hard drives
    FCreateDSC          :Boolean;
    //Append filetypes to files upon exporting
@@ -1864,6 +1866,8 @@ begin
  Image.ScanSubDirs         :=FScanSubDirs;
  //Open DOS Partitions
  Image.OpenDOSPartitions   :=FOpenDOS;
+ //Only use short filenames on DOS images
+ Image.DOSUseSFN           :=FDOSUseSFN;
  //Create *.dsc files with ADFS hard drives
  Image.CreateDSC           :=FCreateDSC;
  //Append filetype to files being exported
@@ -3494,6 +3498,9 @@ begin
  //Open DOS Partitions on ADFS
  FOpenDOS                  :=DIMReg.GetRegValB('Open_DOS',True);
  Image.OpenDOSPartitions   :=FOpenDOS;
+ //Only use short filenames on DOS images
+ FDOSUseSFN                :=DIMReg.GetRegValB('DOS_Use_SFN',False);
+ Image.DOSUseSFN           :=FDOSUseSFN;
  //Create *.dsc files with ADFS Hard Drives
  FCreateDSC                :=DIMReg.GetRegValB('Create_DSC',False);
  Image.CreateDSC           :=FCreateDSC;
@@ -5847,6 +5854,7 @@ begin
  SettingsForm.CompressUEF.Ticked           :=FUEFCompress;
  SettingsForm.ScanSubDirs.Ticked           :=FScanSubDirs;
  SettingsForm.OpenDOS.Ticked               :=FOpenDOS;
+ SettingsForm.DOSUseSFN.Ticked             :=FDOSUseSFN;
  SettingsForm.CreateDSC.Ticked             :=FCreateDSC;
  SettingsForm.AddFiletype.Ticked           :=FAppendFileType;
  SettingsForm.KeepDOSExt.Ticked            :=FKeepDOSExt;
@@ -5876,6 +5884,7 @@ begin
   FUEFCompress        :=SettingsForm.CompressUEF.Ticked;
   FScanSubDirs        :=SettingsForm.ScanSubDirs.Ticked;
   FOpenDOS            :=SettingsForm.OpenDOS.Ticked;
+  FDOSUseSFN          :=SettingsForm.DOSUseSFN.Ticked;
   FCreateDSC          :=SettingsForm.CreateDSC.Ticked;
   FAppendFileType     :=SettingsForm.AddFiletype.Ticked;
   FKeepDOSExt         :=SettingsForm.KeepDOSExt.Ticked;
@@ -6002,6 +6011,7 @@ begin
  DIMReg.SetRegValB('DFS_Allow_Blanks',    FDFSAllowBlank);
  DIMReg.SetRegValB('Scan_SubDirs',        FScanSubDirs);
  DIMReg.SetRegValB('Open_DOS',            FOpenDOS);
+ DIMReg.SetRegValB('DOS_Use_SFN',         FDOSUseSFN);
  DIMReg.SetRegValB('Create_DSC',          FCreateDSC);
  DIMReg.SetRegValB('Append_Filetype',     FAppendFileType);
  DIMReg.SetRegValB('Keep_DOS_Ext',        FKeepDOSExt);
@@ -6013,6 +6023,7 @@ begin
  Image.DFSAllowBlanks      :=FDFSAllowBlank;
  Image.ScanSubDirs         :=FScanSubDirs;
  Image.OpenDOSPartitions   :=FOpenDOS;
+ Image.DOSUseSFN           :=FDOSUseSFN;
  Image.CreateDSC           :=FCreateDSC;
  Image.AppendFiletype      :=FAppendFileType;
  Image.AddImpliedAttributes:=AddImpliedAttributes;
