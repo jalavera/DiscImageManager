@@ -3,13 +3,27 @@ program dimtest;
  Used by the "Test images" workflow.}
 {$mode objfpc}{$H+}
 uses SysUtils, DiscImage;
+type
+ TProgress = class
+  procedure Show(Fupdate: String);
+ end;
+procedure TProgress.Show(Fupdate: String);
+begin
+ WriteLn('  progress: ',Fupdate);
+ Flush(Output);
+end;
 var
- Image: TDiscImage;
- d,e,p: Integer;
+ Image   : TDiscImage;
+ Progress: TProgress;
+ d,e,p   : Integer;
 begin
  Image:=TDiscImage.Create;
+ Progress:=TProgress.Create;
+ Image.ProgressIndicator:=@Progress.Show;
  try
   try
+   WriteLn('Loading ',ParamStr(1));
+   Flush(Output);
    if Image.LoadFromFile(ParamStr(1)) then
    begin
     WriteLn('Format         : ',Image.FormatString);
@@ -40,5 +54,6 @@ begin
   end;
  finally
   Image.Free;
+  Progress.Free;
  end;
 end.
