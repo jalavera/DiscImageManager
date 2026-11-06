@@ -115,7 +115,9 @@ begin
  A.Text:=before; B.Text:=Listing(Check);
  //The order may change, which does not matter
  A.Sort; B.Sort;
- if((not SFN)and(A.Text<>B.Text))or(A.Count<>B.Count)then
+ //(a long name that only differs in case from the short name, e.g. no_log,
+ //is written as the short name, which DOS does not mind)
+ if((not SFN)and(UpperCase(A.Text)<>UpperCase(B.Text)))or(A.Count<>B.Count)then
  begin
   WriteLn('Defrag: FAIL - the defragged image is different');
   for d:=0 to A.Count-1 do if B.IndexOf(A[d])<0 then WriteLn('  missing: ',A[d]);
