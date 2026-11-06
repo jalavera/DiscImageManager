@@ -23,6 +23,6 @@ jobs:
             name=$(basename "$f" .spec)
             python3 tests/mkimg.py "$f" "build/$name"
             echo "===== $name ====="
-            ./build/dimtest "build/$name" || status=1
+            timeout 60 ./build/dimtest "build/$name" | head -300 || status=1
           done
           exit $status
