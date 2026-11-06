@@ -110,7 +110,7 @@ var
 const
  DOSTypes = [$01,$04,$06,$0B,$0C,$0E];//FAT12, FAT16 and FAT32 partitions
  ExtTypes = [$05,$0F,$85];            //Extended partitions
- procedure AddPartition(lba,secs: Cardinal;pt: Byte;logical: Boolean);
+ procedure AddMBRPart(lba,secs: Cardinal;pt: Byte;logical: Boolean);
  begin
   //Ignore anything that is beyond the end of the image
   if QWord(lba)*$200>=GetDataLength then exit;
@@ -131,7 +131,7 @@ begin
   ptype:=ReadByte($1BE+index*$10+4);
   start:=Read32b($1BE+index*$10+8);
   size :=Read32b($1BE+index*$10+12);
-  if(ptype in DOSTypes)and(start>0)then AddPartition(start,size,ptype,False);
+  if(ptype in DOSTypes)and(start>0)then AddMBRPart(start,size,ptype,False);
   if(ptype in ExtTypes)and(start>0)and(ext=0)then ext:=start;
  end;
  //Then the logical drives, following the chain of extended boot records
@@ -148,7 +148,7 @@ begin
    ptype:=ReadByte(ebr*$200+$1BE+4);
    start:=Read32b(ebr*$200+$1BE+8);
    size :=Read32b(ebr*$200+$1BE+12);
-   if(ptype in DOSTypes)and(start>0)then AddPartition(ebr+start,size,ptype,True);
+   if(ptype in DOSTypes)and(start>0)then AddMBRPart(ebr+start,size,ptype,True);
    //Second entry points to the next EBR (relative to the extended partition)
    if ReadByte(ebr*$200+$1CE+4)in ExtTypes then
     nxt:=Read32b(ebr*$200+$1CE+8);
