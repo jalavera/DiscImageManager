@@ -23,7 +23,10 @@ jobs:
             name=$(basename "$f" .spec)
             python3 tests/mkimg.py "$f" "build/$name"
             echo "===== $name ====="
-            timeout 300 ./build/dimtest "build/$name" defrag > "build/$name.log" 2>&1 || status=1
+            arg=""
+            # Only this fixture has a complete FAT, so files can be written back
+            [ "$name" = hdd_86boxmac.img ] && arg=defrag
+            timeout 300 ./build/dimtest "build/$name" $arg > "build/$name.log" 2>&1 || status=1
             grep -v 'progress:' "build/$name.log" | head -400
           done
           exit $status
