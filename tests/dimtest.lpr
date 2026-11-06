@@ -113,6 +113,8 @@ begin
  Check:=TDiscImage.Create(Image);
  A:=TStringList.Create; B:=TStringList.Create;
  A.Text:=before; B.Text:=Listing(Check);
+ //The order may change, which does not matter
+ A.Sort; B.Sort;
  if((not SFN)and(A.Text<>B.Text))or(A.Count<>B.Count)then
  begin
   WriteLn('Defrag: FAIL - the defragged image is different');
