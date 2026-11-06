@@ -6,6 +6,8 @@ Identifies a DOS Plus disc and which type
 function TDiscImage.ID_DOSPlus: Boolean;
 var
  idbyte: Byte=0;
+ index : Integer=0;
+ found : Boolean=False;
 begin
  Result:=False;
  if FFormat=diInvalidImg then
@@ -50,7 +52,17 @@ begin
   end;
   //Normal DOS disc (i.e. has a header)?
   if FFormat=diInvalidImg then //Only check if nothing found
-   if IDDOSPartition($0000) then
+  begin
+   found:=IDDOSPartition($0000);
+   //Not there? Then look for a DOS partition in an MBR partition table, as
+   //found on hard disc images (e.g. from PC emulators)
+   if(not found)and(ReadByte($1FE)=$55)and(ReadByte($1FF)=$AA)then
+    for index:=0 to 3 do
+     if not found then
+      if ReadByte($1BE+index*$10+4)in[$01,$04,$06,$0B,$0C,$0E]then
+       if Read32b($1BE+index*$10+8)>0 then
+        found:=IDDOSPartition(Read32b($1BE+index*$10+8)*$200);
+   if found then
    begin
     //ReadDOSHeader;
     FPartitions[0].TotalSize:=DOSBlocks*cluster_size;
@@ -61,6 +73,7 @@ begin
     if FATType=diFAT16 then inc(FFormat,2);
     if FATType=diFAT32 then inc(FFormat,3);
    end;
+  end;
   Result:=GetMajorFormatNumber=diDOSPlus;
   FHasDirs:=Result;
  end;
@@ -352,6 +365,8 @@ begin
   volname:=ReadString(index*32,-11,buffer);
   RemoveSpaces(volname);
    FDOSVolInRoot:=True;//Volume name is in the root flag
+   //Remember where it is, so it can be written back in the same place
+   if dirname=dosrootname then FDOSVolEntry:=index;
    //Has it already been set?
    if FPartitions[Length(FPartitions)-1].Name='' then
     FPartitions[Length(FPartitions)-1].Name:=volname;//If no, then set it
@@ -1023,8 +1038,25 @@ var
  chsum     : Byte=0;
  fragments : TFragmentArray=nil;
  parts     : array of String=nil;
+ writevol  : Boolean=False;
+ volname   : String='';
 const
  chrpos: array[1..13] of Byte=($01,$03,$05,$07,$09,$0E,$10,$12,$14,$16,$18,$1C,$1E);
+ procedure WriteVolumeEntry;
+ begin
+  //Clear the entry
+  for chrindex:=0 to $1F do WriteByte($00,chrindex+ptr*$20,buffer);
+  //Write the volume name
+  WriteString(volname,ptr*$20,11,32,buffer);
+  //And the attribute for it
+  WriteByte($08,$B+ptr*$20,buffer);
+  //Update the date/time stamps
+  Write16b(DOSTime(Now),$16+ptr*$20,buffer);
+  Write16b(DOSDate(Now),$18+ptr*$20,buffer);
+  //Next entry
+  inc(ptr);
+  writevol:=False;
+ end;
  procedure AdjustDirLength(entries: Integer);
  begin
   inc(numentries,entries);
@@ -1081,22 +1113,12 @@ begin
    //Read the directory into a temporary buffer
    SetLength(buffer,dosroot_size);
    ReadDiscData(addr,dosroot_size,side,0,buffer);
-   //If the volume name is not blank, and is stored here
-   if(temp<>'')and(FDOSVolInRoot)then
-   begin
-    //Move the directory entry pointer to the second entry
-    ptr:=1;
-    //And write the volume name
-    WriteString(temp,0,11,32,buffer);
-    //And the attribute for it
-    WriteByte($08,$B,buffer);
-    //Update the date/time stamps
-    Write16b(DOSTime(Now),$16,buffer);
-    Write16b(DOSDate(Now),$18,buffer);
-    //And clear the final entries
-    Write16b(0,$1A,buffer);
-    Write32b(0,$1C,buffer);
-   end;
+   //If the volume name is not blank, and is stored here, write it back in
+   //the same position it was read from. Bootable discs need IO.SYS and
+   //MSDOS.SYS (or IBMBIO.COM and IBMDOS.COM) to be the first two entries in
+   //the root, so it must not be moved to the top.
+   volname:=temp;
+   writevol:=(volname<>'')and(FDOSVolInRoot);
   end
   else buffer:=ReadDOSObject(addr);
   //Extend or contract the buffer, if necessary
@@ -1112,6 +1134,8 @@ begin
    //Go through each entry in the array
    for index:=0 to Length(FDisc[dir].Entries)-1 do
    begin
+    //Write the volume name here, if this is where it was
+    if(writevol)and(FDOSVolEntry>=0)and(ptr>=FDOSVolEntry)then WriteVolumeEntry;
     //Short Filename
     temp:=DOSShortFilename(dirname,
                            FDisc[dir].Entries[index].Filename,
@@ -1191,6 +1215,8 @@ begin
     inc(ptr);
    end;
   end;
+  //Volume name not written yet? Then it goes at the end
+  if writevol then WriteVolumeEntry;
   //Clear the end of the list (and mark the end of list with a zero)
   for index:=ptr*$20 to Length(buffer)-1 do
    WriteByte($00,index,buffer);
