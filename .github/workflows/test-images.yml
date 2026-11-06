@@ -15,7 +15,7 @@ jobs:
       - name: Build the test tool
         run: |
           mkdir -p build
-          fpc -gl -gw -Cr -FuLazarusSource -FEbuild tests/dimtest.lpr
+          fpc -gl -gw -FuLazarusSource -FEbuild tests/dimtest.lpr
       - name: Open the test images
         run: |
           status=0
