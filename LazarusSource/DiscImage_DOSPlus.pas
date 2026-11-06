@@ -1043,9 +1043,11 @@ var
 const
  chrpos: array[1..13] of Byte=($01,$03,$05,$07,$09,$0E,$10,$12,$14,$16,$18,$1C,$1E);
  procedure WriteVolumeEntry;
+ var
+  i: Integer=0;
  begin
   //Clear the entry
-  for chrindex:=0 to $1F do WriteByte($00,chrindex+ptr*$20,buffer);
+  for i:=0 to $1F do WriteByte($00,i+ptr*$20,buffer);
   //Write the volume name
   WriteString(volname,ptr*$20,11,32,buffer);
   //And the attribute for it
