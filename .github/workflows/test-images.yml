@@ -1,0 +1,28 @@
+name: Test images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Free Pascal
+        run: sudo apt-get update -q && sudo apt-get install -y -q fpc
+      - name: Build the test tool
+        run: |
+          mkdir -p build
+          fpc -gl -gw -FuLazarusSource -FEbuild tests/dimtest.lpr
+      - name: Open the test images
+        run: |
+          status=0
+          for f in tests/*.img.spec; do
+            name=$(basename "$f" .spec)
+            python3 tests/mkimg.py "$f" "build/$name"
+            echo "===== $name ====="
+            ./build/dimtest "build/$name" || status=1
+          done
+          exit $status
