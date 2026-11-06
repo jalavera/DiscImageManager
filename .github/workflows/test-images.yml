@@ -24,8 +24,9 @@ jobs:
             python3 tests/mkimg.py "$f" "build/$name"
             echo "===== $name ====="
             arg=""
-            # Only this fixture has a complete FAT, so files can be written back
+            # Only these fixtures have a complete FAT, so files can be written back
             [ "$name" = hdd_86boxmac.img ] && arg=defrag
+            [ "$name" = macfloppy.img ] && arg=defrag
             timeout 300 ./build/dimtest "build/$name" $arg > "build/$name.log" 2>&1 || status=1
             grep -v 'progress:' "build/$name.log" | head -400
           done
