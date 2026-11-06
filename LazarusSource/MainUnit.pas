@@ -1965,14 +1965,14 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.SelectDOSPartitionClick(Sender: TObject);
 var
- changed: Boolean=False;
+ waschanged: Boolean=False;
 begin
  //Keep the changed flag - changes to the other partition are still in memory
- changed:=HasChanged;
+ waschanged:=HasChanged;
  if ChooseDOSPartition(True) then
  begin
   ShowNewImage(Image.Filename);
-  HasChanged:=changed;
+  HasChanged:=waschanged;
   UpdateImageInfo;
  end;
 end;
