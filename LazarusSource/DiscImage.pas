@@ -418,6 +418,7 @@ type
   FAppendFiletype,              //Append the filetype to files when exporting
   FDOSUseSFN,                   //Use short filenames, even if there are long filenames (DOS)
   FHasDirs      : Boolean;      //Format is directory capable
+  FDOSVolEntry  : Integer;      //Position of the volume name in the root (DOS)
   secsize,                      //Sector Size
   bpmb,                         //Bits Per Map Bit (Acorn ADFS New)
   dosalloc,                     //Allocation Unit (DOS Plus)
