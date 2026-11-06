@@ -1166,6 +1166,7 @@ type
                                               write FScanSubDirs;
   property DOSUseSFN:           Boolean       read FDOSUseSFN
                                               write FDOSUseSFN;
+  function RemoveDOSLongFilenames: Boolean;
   function DOSPartitionCount: Integer;
   function DOSPartitionDescription(index: Integer): String;
   function SelectDOSPartition(index: Integer): Boolean;

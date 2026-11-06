@@ -3734,6 +3734,7 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.btn_SaveImageClick(Sender: TObject);
 var
+ renamed  : Boolean=False;
  ext      : String='';
  filename : String='';
  pathname : String='';
@@ -3768,10 +3769,16 @@ begin
  //Show the dialogue
  If SaveImage.Execute then
  begin
+  //'No long filenames on DOS images': the whole image is saved as 8.3 only
+  renamed:=False;
+  if(FDOSUseSFN)and(Image.MajorFormatNumber=diDOSPlus)then
+   renamed:=Image.RemoveDOSLongFilenames;
   //Save the image
   Image.SaveToFile(SaveImage.FileName,FUEFCompress);
   Caption:=ApplicationTitle+' - '+ExtractFileName(Image.Filename);
   HasChanged:=False;
+  //Show the new names, if any were changed
+  if renamed then ShowNewImage(Image.Filename);
   //Update the status bar
   UpdateImageInfo;
  end;
@@ -5382,6 +5389,15 @@ begin
   Image.ProgressIndicator:=nil;
   {$IFNDEF DIMCONSOLE}if Fguiopen then ProgressForm.Show;{$ENDIF}
   UpdateProgress('Preparing to defrag');
+  //'No long filenames on DOS images': remove them first, keeping the short
+  //names DOS already sees, so the defragged image is all 8.3
+  if(FDOSUseSFN)and(Image.MajorFormatNumber=diDOSPlus)then
+   if Image.RemoveDOSLongFilenames then
+   begin
+    //The tree needs the new names, as the files are deleted through it
+    {$IFNDEF DIMCONSOLE}if Fguiopen then ShowNewImage(Image.Filename);{$ENDIF}
+    HasChanged:=True;
+   end;
   //Create a new image, with the same shape as the original
   oldscan:=Image.ScanSubDirs;
   olddos :=Image.OpenDOSPartitions;

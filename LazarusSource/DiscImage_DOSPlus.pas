@@ -158,6 +158,68 @@ begin
 end;
 
 {-------------------------------------------------------------------------------
+Remove every long filename in the image, leaving each entry with the short name
+it already has (the one DOS sees). Returns True if anything was changed.
+-------------------------------------------------------------------------------}
+function TDiscImage.RemoveDOSLongFilenames: Boolean;
+var
+ d      : Integer=0;
+ e      : Integer=0;
+ r      : Integer=0;
+ changed: array of Boolean=nil;
+begin
+ Result:=False;
+ if GetMajorFormatNumber<>diDOSPlus then exit;
+ //Make sure every directory has been read in
+ d:=0;
+ while d<Length(FDisc) do
+ begin
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+   begin
+    r:=FDisc[d].Entries[e].DirRef;
+    if(r>=0)and(r<Length(FDisc))then
+     if not FDisc[r].BeenRead then
+      ReadDirectory(GetParent(d)+DirSep(0)+FDisc[d].Entries[e].Filename);
+   end;
+  inc(d);
+ end;
+ //Give every entry with a long filename its short name
+ SetLength(changed,Length(FDisc));
+ for d:=0 to Length(FDisc)-1 do
+ begin
+  changed[d]:=False;
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+    if(FDisc[d].Entries[e].ShortFilename<>'')
+    and(FDisc[d].Entries[e].Filename<>FDisc[d].Entries[e].ShortFilename)then
+    begin
+     FDisc[d].Entries[e].Filename:=FDisc[d].Entries[e].ShortFilename;
+     //A directory also needs its own record renaming
+     r:=FDisc[d].Entries[e].DirRef;
+     if(r>=0)and(r<Length(FDisc))then
+     begin
+      FDisc[r].Directory:=FDisc[d].Entries[e].ShortFilename;
+      FDisc[r].Title    :=FDisc[d].Entries[e].ShortFilename;
+     end;
+     changed[d]:=True;
+    end;
+ end;
+ //The paths may have changed, so update the parents
+ for d:=0 to Length(FDisc)-1 do
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+    FDisc[d].Entries[e].Parent:=GetParent(d);
+ //And write back the directories that have changed
+ for d:=0 to Length(FDisc)-1 do
+  if changed[d] then
+  begin
+   UpdateDOSDirectory(GetParent(d));
+   Result:=True;
+  end;
+end;
+
+{-------------------------------------------------------------------------------
 Number of DOS partitions found in the MBR (0 if the image is not partitioned)
 -------------------------------------------------------------------------------}
 function TDiscImage.DOSPartitionCount: Integer;
