@@ -328,6 +328,7 @@ type
   procedure DraggedItemMouseUp(Sender: TObject; Button: TMouseButton;
    Shift: TShiftState; X, Y: Integer);
   procedure DirListMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+  function DragOutToFinder: Boolean;
   procedure DirListMouseUp(Sender: TObject; Button: TMouseButton;
    Shift: TShiftState; X, Y: Integer);
   procedure DelayTimerTimer(Sender: TObject);
@@ -682,7 +683,7 @@ uses
   AboutUnit,NewImageUnit,ImageDetailUnit,ProgressUnit,SearchUnit,
   CustomDialogueUnit,ErrorLogUnit,SettingsUnit,ImportSelectorUnit,
   PWordEditorUnit,AFSPartitionUnit,ChangeInterleaveUnit,CSVPrefUnit,
-  ImageReportUnit,{$ENDIF}ConsoleAppUnit;
+  ImageReportUnit,MacDragOut,{$ENDIF}ConsoleAppUnit;
 
 {$IFNDEF DIMCONSOLE}
 {-------------------------------------------------------------------------------
@@ -6596,6 +6597,50 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
+//The item being dragged has left the window: on macOS, extract it to a
+//temporary folder and hand it over to the Finder as a normal file drag
+{------------------------------------------------------------------------------}
+function TMainForm.DragOutToFinder: Boolean;
+var
+ dir  : Cardinal=0;
+ entry: Cardinal=0;
+ path : String='';
+ name : String='';
+ Item : TTreeNode=nil;
+begin
+ Result:=False;
+ if TargetOS<>'Darwin' then exit;
+ Item:=DraggedItem;
+ if Item=nil then exit;
+ //Stop the drag within the window (the ghost image is freed once its own
+ //event handler has finished, as this may have been called from it)
+ if ObjectDrag<>nil then
+ begin
+  ObjectDrag.Visible:=False;
+  Application.ReleaseComponent(ObjectDrag);
+  ObjectDrag:=nil;
+ end;
+ imgCopy.Visible:=False;
+ HoverTimer.Enabled:=False;
+ MouseIsDown:=False;
+ IsDragging:=False;
+ DraggedItem:=nil;
+ Dst:=nil;
+ DirList.ClearSelection;
+ Item.Selected:=True;
+ //Find it in the image
+ if not Image.FileExists(GetFilePath(Item),dir,entry) then exit;
+ if(dir=$FFFF)or(entry=$FFFF)then exit;
+ //Extract it (a directory comes with everything in it)
+ path:=DragOutFolder;
+ name:=Image.GetWindowsFilename(dir,entry);
+ DownLoadFile(dir,entry,path);
+ //And let the Finder have it
+ if FileExists(path+name)or DirectoryExists(path+name)then
+  Result:=StartFileDragOut(PtrUInt(DirList.Handle),[path+name]);
+end;
+
+{------------------------------------------------------------------------------}
 //User has dragged an item around the directory list
 {------------------------------------------------------------------------------}
 procedure TMainForm.DirListMouseMove(Sender: TObject; Shift: TShiftState; X,
@@ -6624,6 +6669,18 @@ begin
   begin
    //We are dragging the control
    IsDragging:=True;
+   //Has it been dragged out of the window? (macOS: on to the Finder)
+   if TargetOS='Darwin' then
+   begin
+    pt:=DirList.ClientToScreen(Point(X,Y));
+    R.TopLeft    :=ClientToScreen(Point(0,0));
+    R.BottomRight:=ClientToScreen(Point(ClientWidth,ClientHeight));
+    if not PtInRect(R,pt) then
+    begin
+     DragOutToFinder;
+     exit;
+    end;
+   end;
    //Are we over another node?
    Dst:=GetNodeAt(Y);//Node under the cursor
    if (DraggedItem<>nil)AND(Dst<>nil)
