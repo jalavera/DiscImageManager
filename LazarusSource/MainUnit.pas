@@ -689,7 +689,7 @@ uses
   AboutUnit,NewImageUnit,ImageDetailUnit,ProgressUnit,SearchUnit,
   CustomDialogueUnit,ErrorLogUnit,SettingsUnit,ImportSelectorUnit,
   PWordEditorUnit,AFSPartitionUnit,ChangeInterleaveUnit,CSVPrefUnit,
-  ImageReportUnit,MacDragOut,{$ENDIF}ConsoleAppUnit;
+  ImageReportUnit,FileDragOut,{$ENDIF}ConsoleAppUnit;
 
 {$IFNDEF DIMCONSOLE}
 {-------------------------------------------------------------------------------
@@ -6639,8 +6639,9 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
-//The item being dragged has left the window: on macOS, extract it to a
-//temporary folder and hand it over to the Finder as a normal file drag
+//The items being dragged have left the window: on macOS and Windows, extract
+//them to a temporary folder and hand them over to the Finder/Explorer as a
+//normal file drag
 {------------------------------------------------------------------------------}
 function TMainForm.DragOutToFinder: Boolean;
 var
@@ -6653,7 +6654,7 @@ var
  Paths: array of String=nil;
 begin
  Result:=False;
- if TargetOS<>'Darwin' then exit;
+ if(TargetOS<>'Darwin')and(TargetOS<>'Win32')and(TargetOS<>'Win64')then exit;
  //What is being dragged: all the selected items, or just the one
  Items:=Copy(DragNodes);
  if Length(Items)=0 then
@@ -6756,8 +6757,8 @@ begin
   begin
    //We are dragging the control
    IsDragging:=True;
-   //Has it been dragged out of the window? (macOS: on to the Finder)
-   if TargetOS='Darwin' then
+   //Has it been dragged out of the window? (on to the Finder or Explorer)
+   if(TargetOS='Darwin')or(TargetOS='Win32')or(TargetOS='Win64')then
    begin
     pt:=DirList.ClientToScreen(Point(X,Y));
     R.TopLeft    :=ClientToScreen(Point(0,0));
