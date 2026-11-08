@@ -768,15 +768,20 @@ begin
   thisdir:=Fcurrdir;
   Lcurrdir:=Fcurrdir; //Save the current directory pointer
 {$IFNDEF DIMCONSOLE} end;{$ENDIF}
- //If ADFS, create the directory, then select it
- if Image.MajorFormatNumber=diAcornADFS then
+ //If ADFS or DOS, create the directory, then select it
+ if(Image.MajorFormatNumber=diAcornADFS)
+ or(Image.MajorFormatNumber=diDOSPlus)then
  begin
+  //(a folder can be passed with a trailing / or \)
+  dirname   :=ExcludeTrailingPathDelimiter(dirname);
   importname:=ExtractFilename(dirname);
   attr      :='DLR';
+  //DOS: just a directory (R would make it read only)
+  if Image.MajorFormatNumber=diDOSPlus then attr:='D';
   disctitle :='';
   dirtitle  :='';
-  //Is there an inf file?
-  if NewImage=nil then
+  //Is there an inf file? (ADFS only)
+  if(NewImage=nil)and(Image.MajorFormatNumber=diAcornADFS)then
    if FileExists(dirname+'.inf') then
    begin
     inffile:='';
@@ -816,7 +821,8 @@ begin
     end;
     F.Free;
    end;
-  //Convert a Windows filename to a BBC filename
+  //Convert a Windows filename to a BBC filename (DOS checks its own names)
+  if Image.MajorFormatNumber=diAcornADFS then
 {$IFNDEF DIMCONSOLE}
   if Fguiopen then
    if(TMyTreeNode(OriginalNode).Parent=nil)
@@ -826,7 +832,8 @@ begin
    if(Image.Disc[thisdir].Parent<0)
    and(importname=Image.Disc[thisdir].Directory) then else WinToBBC(importname);
   //Remove spaces for non-big directories, and ensure is 10 chars or less
-  if Image.Partitions[0].DirType<>diADFSBigDir then
+  if(Image.MajorFormatNumber=diAcornADFS)
+  and(Image.Partitions[0].DirType<>diADFSBigDir)then
   begin
    importname:=ReplaceStr(importname,' ','_');
    importname:=LeftStr(importname,10);
@@ -877,7 +884,9 @@ begin
    begin
     FindFirst(dirname+pathdelim+'*',faDirectory,Dir);
     repeat
-     if(Dir.Name<>'.')and(Dir.Name<>'..')then
+     if(Dir.Name<>'.')and(Dir.Name<>'..')
+     //On DOS, leave out the host's hidden files (e.g. .DS_Store on a Mac)
+     and((Image.MajorFormatNumber<>diDOSPlus)or(LeftStr(Dir.Name,1)<>'.'))then
      begin
       if(Dir.Attr AND faDirectory)=faDirectory then
       begin //Add any sub-directories
@@ -887,7 +896,8 @@ begin
       else
       begin //Add any files
        {$IFNDEF DIMCONSOLE}if not Fguiopen then{$ENDIF} Fcurrdir:=thisdir;
-       if LowerCase(RightStr(Dir.Name,4))<>'.inf' then
+       if(LowerCase(RightStr(Dir.Name,4))<>'.inf')
+       or(Image.MajorFormatNumber=diDOSPlus)then
         Result:=(AddFileToImage(dirname+pathdelim+Dir.Name)>=0)and(Result);
       end;
      end;
