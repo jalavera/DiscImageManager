@@ -26,6 +26,28 @@ jobs:
           path: LazarusSource/lib/Release/x86_64-win64/DiscImageManager.exe
           if-no-files-found: error
 
+  windows32:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Lazarus (32 bit)
+        shell: pwsh
+        run: |
+          choco install lazarus --forcex86 -y --no-progress
+          $laz = Get-ChildItem -Path 'C:\','C:\Program Files (x86)' -Filter lazbuild.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $laz) { throw 'lazbuild.exe not found' }
+          Write-Host "Found $($laz.FullName)"
+          "LAZBUILD=$($laz.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build Win32
+        working-directory: LazarusSource
+        shell: pwsh
+        run: '& $env:LAZBUILD -B --bm="Release Windows 32 bit" DiscImageManager.lpi'
+      - uses: actions/upload-artifact@v5
+        with:
+          name: DiscImageManager-win32
+          path: LazarusSource/lib/Release/i386-win32/DiscImageManager.exe
+          if-no-files-found: error
+
   macos:
     runs-on: macos-15-intel
     steps:
@@ -79,7 +101,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [windows, macos]
+    needs: [windows, windows32, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v5
@@ -89,6 +111,7 @@ jobs:
         run: |
           cd dist
           zip -j DiscImageManager-win64.zip DiscImageManager-win64/DiscImageManager.exe
+          zip -j DiscImageManager-win32.zip DiscImageManager-win32/DiscImageManager.exe
           mv DiscImageManager-macOS-x86_64/*.zip .
           mv DiscImageManager-macOS-arm64/*.zip .
           ls -l *.zip
