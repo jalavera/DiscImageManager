@@ -329,6 +329,8 @@ type
    Shift: TShiftState; X, Y: Integer);
   procedure DirListMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
   function DragOutToFinder: Boolean;
+  function NodeInList(Node: TTreeNode;const List: array of TTreeNode): Boolean;
+  function NodeStillExists(Node: TTreeNode): Boolean;
   procedure DirListMouseUp(Sender: TObject; Button: TMouseButton;
    Shift: TShiftState; X, Y: Integer);
   procedure DelayTimerTimer(Sender: TObject);
@@ -478,6 +480,10 @@ type
    //Item being dragged on Directory List, and the destination
    Dst,
    DraggedItem         :TTreeNode;
+   //Items being dragged out to the Finder, and the last multiple selection
+   //(clicking on one of them to start the drag may have cleared it)
+   DragNodes,
+   LastSelection       :array of TTreeNode;
    //To keep track of if we are dragging and if the mouse button is down
    IsDragging,
    MouseIsDown         :Boolean;
@@ -6538,6 +6544,17 @@ procedure TMainForm.DirListMouseDown(Sender: TObject; Button: TMouseButton;
 var
  dir  : Cardinal=0;
  entry: Cardinal=0;
+ i    : Integer=0;
+ //Is this node, or one it is in, being dragged?
+ function NodeInListOrAncestor(Node: TTreeNode): Boolean;
+ begin
+  Result:=False;
+  while(Node<>nil)and(not Result)do
+  begin
+   Result:=NodeInList(Node,DragNodes);
+   Node:=Node.Parent;
+  end;
+ end;
 begin
  if(ssLeft in Shift)and(not(ssCtrl in Shift))then //Only if left button is clicked
  begin
@@ -6551,6 +6568,27 @@ begin
      //If it is valid
      if DraggedItem<>nil then
      begin
+      //Remember everything that is selected, in case it is dragged out to
+      //the Finder (clicking on it may already have cleared the selection, so
+      //look at the last one too)
+      SetLength(DragNodes,0);
+      if(DirList.SelectionCount>1)and(DraggedItem.Selected)then
+      begin
+       for i:=0 to DirList.SelectionCount-1 do
+        Insert(DirList.Selections[i],DragNodes,Length(DragNodes));
+      end
+      else
+       if NodeInList(DraggedItem,LastSelection) then
+        for i:=0 to Length(LastSelection)-1 do
+         if NodeStillExists(LastSelection[i]) then
+          Insert(LastSelection[i],DragNodes,Length(DragNodes));
+      //Leave out the roots, and anything inside another one being dragged
+      i:=0;
+      while i<Length(DragNodes) do
+       if(DragNodes[i].Parent=nil)
+       or((DragNodes[i].Parent<>nil)and(NodeInListOrAncestor(DragNodes[i].Parent)))then
+        Delete(DragNodes,i,1)
+       else inc(i);
       //Set the mouse down flag
       MouseIsDown :=True;
       //Remember the mouse position
@@ -6608,14 +6646,23 @@ function TMainForm.DragOutToFinder: Boolean;
 var
  dir  : Cardinal=0;
  entry: Cardinal=0;
+ i    : Integer=0;
  path : String='';
  fname: String='';
- Item : TTreeNode=nil;
+ Items: array of TTreeNode=nil;
+ Paths: array of String=nil;
 begin
  Result:=False;
  if TargetOS<>'Darwin' then exit;
- Item:=DraggedItem;
- if Item=nil then exit;
+ //What is being dragged: all the selected items, or just the one
+ Items:=Copy(DragNodes);
+ if Length(Items)=0 then
+  if DraggedItem<>nil then
+  begin
+   SetLength(Items,1);
+   Items[0]:=DraggedItem;
+  end;
+ if Length(Items)=0 then exit;
  //Stop the drag within the window (the ghost image is freed once its own
  //event handler has finished, as this may have been called from it)
  if ObjectDrag<>nil then
@@ -6630,18 +6677,54 @@ begin
  IsDragging:=False;
  DraggedItem:=nil;
  Dst:=nil;
+ SetLength(DragNodes,0);
+ //Show them as selected again
  DirList.ClearSelection;
- Item.Selected:=True;
- //Find it in the image
- if not Image.FileExists(GetFilePath(Item),dir,entry) then exit;
- if(dir=$FFFF)or(entry=$FFFF)then exit;
- //Extract it (a directory comes with everything in it)
+ for i:=0 to Length(Items)-1 do Items[i].MultiSelected:=True;
+ //Extract each one (a directory comes with everything in it)
  path:=DragOutFolder;
- fname:=Image.GetWindowsFilename(dir,entry);
- DownLoadFile(dir,entry,path);
- //And let the Finder have it
- if FileExists(path+fname)or DirectoryExists(path+fname)then
-  Result:=StartFileDragOut(PtrUInt(DirList.Handle),[path+fname]);
+ SetLength(Paths,0);
+ for i:=0 to Length(Items)-1 do
+  if Image.FileExists(GetFilePath(Items[i]),dir,entry) then
+   if(dir<>$FFFF)and(entry<>$FFFF)then
+   begin
+    fname:=Image.GetWindowsFilename(dir,entry);
+    DownLoadFile(dir,entry,path);
+    if(FileExists(path+fname)or DirectoryExists(path+fname))
+    and(not AnsiMatchText(path+fname,Paths))then
+    begin
+     SetLength(Paths,Length(Paths)+1);
+     Paths[Length(Paths)-1]:=path+fname;
+    end;
+   end;
+ //And let the Finder have them
+ if Length(Paths)>0 then
+  Result:=StartFileDragOut(PtrUInt(DirList.Handle),Paths);
+end;
+
+{------------------------------------------------------------------------------}
+//Is the node in the list?
+{------------------------------------------------------------------------------}
+function TMainForm.NodeInList(Node: TTreeNode;const List: array of TTreeNode): Boolean;
+var
+ i: Integer=0;
+begin
+ Result:=False;
+ for i:=0 to Length(List)-1 do
+  if List[i]=Node then exit(True);
+end;
+
+{------------------------------------------------------------------------------}
+//Is the node still in the tree (it may have been rebuilt since)?
+{------------------------------------------------------------------------------}
+function TMainForm.NodeStillExists(Node: TTreeNode): Boolean;
+var
+ i: Integer=0;
+begin
+ Result:=False;
+ if Node=nil then exit;
+ for i:=0 to DirList.Items.Count-1 do
+  if DirList.Items[i]=Node then exit(True);
 end;
 
 {------------------------------------------------------------------------------}
@@ -6847,6 +6930,7 @@ end;
 procedure TMainForm.DirListMouseUp(Sender: TObject; Button: TMouseButton;
  Shift: TShiftState; X, Y: Integer);
 var
+ i         : Integer=0;
  Xmovement : Integer=0;
  Ymovement : Integer=0;
  copymode  : Boolean=False;
@@ -6884,6 +6968,12 @@ begin
  //Reset the flags
  MouseIsDown:=False;
  IsDragging:=False;
+ SetLength(DragNodes,0);
+ //Remember what is now selected (see DirListMouseDown)
+ SetLength(LastSelection,0);
+ if DirList.SelectionCount>1 then
+  for i:=0 to DirList.SelectionCount-1 do
+   Insert(DirList.Selections[i],LastSelection,Length(LastSelection));
 end;
 
 {------------------------------------------------------------------------------}
