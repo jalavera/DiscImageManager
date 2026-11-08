@@ -198,7 +198,7 @@ begin
     else
      SysUtils.DeleteFile(IncludeTrailingPathDelimiter(path)+Dir.Name);
   until FindNext(Dir)<>0;
-  FindClose(Dir);
+  SysUtils.FindClose(Dir);
  end;
  RemoveDir(path);
 end;
