@@ -6605,7 +6605,7 @@ var
  dir  : Cardinal=0;
  entry: Cardinal=0;
  path : String='';
- name : String='';
+ fname: String='';
  Item : TTreeNode=nil;
 begin
  Result:=False;
@@ -6633,11 +6633,11 @@ begin
  if(dir=$FFFF)or(entry=$FFFF)then exit;
  //Extract it (a directory comes with everything in it)
  path:=DragOutFolder;
- name:=Image.GetWindowsFilename(dir,entry);
+ fname:=Image.GetWindowsFilename(dir,entry);
  DownLoadFile(dir,entry,path);
  //And let the Finder have it
- if FileExists(path+name)or DirectoryExists(path+name)then
-  Result:=StartFileDragOut(PtrUInt(DirList.Handle),[path+name]);
+ if FileExists(path+fname)or DirectoryExists(path+fname)then
+  Result:=StartFileDragOut(PtrUInt(DirList.Handle),[path+fname]);
 end;
 
 {------------------------------------------------------------------------------}
