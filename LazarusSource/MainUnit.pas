@@ -372,6 +372,7 @@ type
   procedure PasteFromClipboardExecute(Sender: TObject);
   procedure ToolBarContainerChange(Sender: TObject);
   procedure HoverTimerTimer(Sender: TObject);
+  procedure DragOutTimerTimer(Sender: TObject);
 {$ENDIF}
 {$IFDEF DIMCONSOLE}
   constructor Create;
@@ -484,6 +485,9 @@ type
    //(clicking on one of them to start the drag may have cleared it)
    DragNodes,
    LastSelection       :array of TTreeNode;
+   //Watches for the mouse leaving the window while dragging (Windows does not
+   //always send mouse moves from outside the window)
+   DragOutTimer        :TTimer;
    //To keep track of if we are dragging and if the mouse button is down
    IsDragging,
    MouseIsDown         :Boolean;
@@ -6768,6 +6772,17 @@ begin
      DragOutToFinder;
      exit;
     end;
+    //Keep an eye on it in case the mouse moves stop when it leaves the window
+    if TargetOS<>'Darwin' then
+    begin
+     if DragOutTimer=nil then
+     begin
+      DragOutTimer:=TTimer.Create(Self);
+      DragOutTimer.Interval:=50;
+      DragOutTimer.OnTimer:=@DragOutTimerTimer;
+     end;
+     DragOutTimer.Enabled:=True;
+    end;
    end;
    //Are we over another node?
    Dst:=GetNodeAt(Y);//Node under the cursor
@@ -6886,6 +6901,30 @@ begin
     Application.ProcessMessages;
    end;
   end;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//While dragging, see if the mouse has left the window
+{------------------------------------------------------------------------------}
+procedure TMainForm.DragOutTimerTimer(Sender: TObject);
+var
+ R : TRect;
+ pt: TPoint;
+begin
+ //Not dragging any more?
+ if(not MouseIsDown)or(not IsDragging)or(not DragButtonDown)then
+ begin
+  DragOutTimer.Enabled:=False;
+  exit;
+ end;
+ pt:=Mouse.CursorPos;
+ R.TopLeft    :=ClientToScreen(Point(0,0));
+ R.BottomRight:=ClientToScreen(Point(ClientWidth,ClientHeight));
+ if not PtInRect(R,pt) then
+ begin
+  DragOutTimer.Enabled:=False;
+  DragOutToFinder;
  end;
 end;
 

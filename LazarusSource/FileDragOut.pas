@@ -25,6 +25,8 @@ uses
 function StartFileDragOut(View: PtrUInt; const Paths: array of String): Boolean;
 //An empty temporary folder to extract the dragged files into
 function DragOutFolder: String;
+//Is the (left) mouse button still held down? (always True on macOS)
+function DragButtonDown: Boolean;
 
 implementation
 
@@ -51,6 +53,11 @@ begin
   Result:=NSDragOperationCopy
  else
   Result:=NSDragOperationNone;
+end;
+
+function DragButtonDown: Boolean;
+begin
+ Result:=True;
 end;
 
 function StartFileDragOut(View: PtrUInt; const Paths: array of String): Boolean;
@@ -125,6 +132,15 @@ begin
  Result:=DRAGDROP_S_USEDEFAULTCURSORS;
 end;
 
+function DragButtonDown: Boolean;
+begin
+ //The primary button, which is the right one if they have been swapped
+ if GetSystemMetrics(SM_SWAPBUTTON)<>0 then
+  Result:=(GetAsyncKeyState(VK_RBUTTON) and $8000)<>0
+ else
+  Result:=(GetAsyncKeyState(VK_LBUTTON) and $8000)<>0;
+end;
+
 function StartFileDragOut(View: PtrUInt; const Paths: array of String): Boolean;
 var
  desktop,
@@ -177,6 +193,11 @@ begin
  end;
 end;
 {$ELSE}
+function DragButtonDown: Boolean;
+begin
+ Result:=True;
+end;
+
 function StartFileDragOut(View: PtrUInt; const Paths: array of String): Boolean;
 begin
  Result:=False;
