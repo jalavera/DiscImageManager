@@ -883,10 +883,12 @@ begin
    //Now we import everything inside this
    if NewImage=nil then //Add files from host OS
    begin
-    FindFirst(dirname+pathdelim+'*',faDirectory,Dir);
+    //(faAnyFile, as on macOS/Linux a mask of faDirectory leaves out the files)
+    FindFirst(dirname+pathdelim+'*',faAnyFile,Dir);
     repeat
      if(Dir.Name<>'.')and(Dir.Name<>'..')
-     //On DOS, leave out the host's hidden files (e.g. .DS_Store on a Mac)
+     //Leave out the host's hidden files (e.g. .DS_Store on a Mac)
+     and((Dir.Attr AND faHidden)=0)
      and((Image.MajorFormatNumber<>diDOSPlus)or(LeftStr(Dir.Name,1)<>'.'))then
      begin
       if(Dir.Attr AND faDirectory)=faDirectory then
@@ -1413,7 +1415,9 @@ begin
   end;
   F.Free;
  end;
- if Length(buffer)>0 then //Only try and add if there is some data
+ //Only try and add if there is some data (DOS can have empty files)
+ if(Length(buffer)>0)
+ or((Image.MajorFormatNumber=diDOSPlus)and(FileExists(filename)))then
  begin
   ok:=False;
 {$IFNDEF DIMCONSOLE}
