@@ -2,7 +2,7 @@ program dimtest;
 {Opens a disc image with the TDiscImage class and lists what it finds.
  Used by the "Test images" workflow.}
 {$mode objfpc}{$H+}
-uses SysUtils, Classes, Math, DiscImage;
+uses SysUtils, Classes, Math, DateUtils, DiscImage;
 type
  TProgress = class
   procedure Show(Fupdate: String);
@@ -236,9 +236,9 @@ begin
   begin
    prev:=Check.Disc[d].Entries[e-1];
    cur :=Check.Disc[d].Entries[e];
-   if(Check.Disc[d].Parent=-1)and(IsSys(prev) or IsSys(cur))then
+   if Check.IsDOSSystemEntry(d,e-1) or Check.IsDOSSystemEntry(d,e) then
    begin
-    if IsSys(cur) and not IsSys(prev) then bad:=True;
+    if Check.IsDOSSystemEntry(d,e) and not Check.IsDOSSystemEntry(d,e-1) then bad:=True;
     continue;
    end;
    if(prev.DirRef>=0)<>(cur.DirRef>=0)then
@@ -349,6 +349,39 @@ begin
   Result:=False;
  end
  else WriteLn('Repair: OK (repaired ',rep,')');
+ Check.Free;
+ Img.Free;
+end;
+
+{Sets the dates modified and created of a file, and checks they are there
+ when the image is read again}
+function TimesTest(filename: String): Boolean;
+var
+ Img, Check: TDiscImage;
+ e         : Integer;
+ m, c      : TDateTime;
+begin
+ Result:=True;
+ Img:=TDiscImage.Create;
+ Img.LoadFromFile(filename);
+ Img.ProgressIndicator:=nil;
+ e:=0;
+ while(e<Length(Img.Disc[0].Entries))
+   and((Img.Disc[0].Entries[e].DirRef>=0)or(Img.IsDOSSystemEntry(0,e)))do inc(e);
+ if e>=Length(Img.Disc[0].Entries) then begin Img.Free; exit; end;
+ m:=EncodeDateTime(1999,12,31,23,58,0,0);
+ c:=EncodeDateTime(1990,1,2,3,4,0,0);
+ Img.SetDOSEntryTimes(0,e,m,c);
+ Check:=TDiscImage.Create(Img);
+ if(Abs(Check.Disc[0].Entries[e].TimeStamp-m)>1/86400*2)
+ or(Abs(Check.Disc[0].Entries[e].CreateTime-c)>1/86400*2)then
+ begin
+  WriteLn('Times: FAIL - ',Check.Disc[0].Entries[e].Filename,' ',
+          DateTimeToStr(Check.Disc[0].Entries[e].TimeStamp),' / ',
+          DateTimeToStr(Check.Disc[0].Entries[e].CreateTime));
+  Result:=False;
+ end
+ else WriteLn('Times: OK on ',Check.Disc[0].Entries[e].Filename);
  Check.Free;
  Img.Free;
 end;
@@ -489,6 +522,8 @@ begin
      if not PathNameTest(ParamStr(1),False) then ExitCode:=3;
      if not PathNameTest(ParamStr(1),True) then ExitCode:=3;
      if not RepairTest(ParamStr(1)) then ExitCode:=3;
+     if not TimesTest(ParamStr(1)) then ExitCode:=3;
+     if not SortTest(ParamStr(1),6) then ExitCode:=3;
     end;
     //Again, on a fresh copy, with short filenames only
     if ParamStr(2)='defrag' then
