@@ -1296,8 +1296,17 @@ begin
   if FDisc[dir].Entries[entry].DirRef>=0 then //Copying directory
   begin
    Result:=-10; //Can't move or copy to the same directory
+   //Make sure the source has been read in, so its contents get copied
+   if not FDisc[FDisc[dir].Entries[entry].DirRef].BeenRead then
+   begin
+    ReadDirectory(filename);
+    FileExists(filename,dir,entry);
+   end;
    //Is there already a file/directory of that name at the destination?
-   if not FileExists(directory+FPartitions[0].DirSep+newfilename,ptr) then
+   //(and do not copy a directory into itself, which would never end)
+   if(not FileExists(directory+FPartitions[0].DirSep+newfilename,ptr))
+   and(directory<>filename)
+   and(LeftStr(directory,Length(filename)+1)<>filename+FPartitions[0].DirSep)then
    begin
     //First, create a new directory at the destination
     Result:=CreateDirectory(newfilename,directory,FDisc[dir].Entries[entry].Attributes);

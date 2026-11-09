@@ -443,6 +443,8 @@ type
   function OfferMacFileRemoval: Boolean;
   function ChooseDOSPartition(always: Boolean): Boolean;
   procedure SelectDOSPartitionClick(Sender: TObject);
+  procedure RefreshImageClick(Sender: TObject);
+  function AddRefreshIcon: Integer;
 {$ENDIF}
   procedure ParseCommand(var Command: TStringArray);
 {$IFNDEF DIMCONSOLE}
@@ -488,6 +490,9 @@ type
    //Watches for the mouse leaving the window while dragging (Windows does not
    //always send mouse moves from outside the window)
    DragOutTimer        :TTimer;
+   //Refresh Image button and menu item (made in FormCreate)
+   btn_RefreshImage    :TToolButton;
+   menuRefreshImage    :TMenuItem;
    //To keep track of if we are dragging and if the mouse button is down
    IsDragging,
    MouseIsDown         :Boolean;
@@ -2006,6 +2011,63 @@ begin
  end;
 end;
 
+{$IFNDEF DIMCONSOLE}
+{------------------------------------------------------------------------------}
+//Refresh Image: read the image again from memory, so that everything (e.g.
+//directories just added, shown in italics) shows as it is actually stored
+{------------------------------------------------------------------------------}
+procedure TMainForm.RefreshImageClick(Sender: TObject);
+var
+ waschanged: Boolean=False;
+begin
+ WriteToDebug('MainForm.RefreshImageClick');
+ //Keep the changed flag - nothing has been saved
+ waschanged:=HasChanged;
+ if Image.ReloadFromData then
+ begin
+  ShowNewImage(Image.Filename);
+  HasChanged:=waschanged;
+  UpdateImageInfo;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Draw the icon for Refresh Image (a circular arrow) and add it to the toolbar
+//images
+{------------------------------------------------------------------------------}
+function TMainForm.AddRefreshIcon: Integer;
+var
+ bmp: TBitmap=nil;
+ w  : Integer=0;
+ function S(v: Integer): Integer; //Scale from a 68 pixel design
+ begin
+  Result:=Round(v*w/68);
+ end;
+begin
+ Result:=-1;
+ w:=ToolBarImages.Width;
+ bmp:=TBitmap.Create;
+ try
+  bmp.SetSize(w,ToolBarImages.Height);
+  bmp.Canvas.Brush.Color:=clFuchsia;
+  bmp.Canvas.FillRect(0,0,bmp.Width,bmp.Height);
+  //The arc, from the top right going anticlockwise round to the right
+  bmp.Canvas.Pen.Color:=$00B06020; //A blue
+  bmp.Canvas.Pen.Width:=S(9);
+  bmp.Canvas.Brush.Style:=bsClear;
+  bmp.Canvas.Arc(S(12),S(12),S(56),S(56),S(45),S(15),S(56),S(30));
+  //The arrow head, pointing back up into the gap
+  bmp.Canvas.Brush.Style:=bsSolid;
+  bmp.Canvas.Brush.Color:=$00B06020;
+  bmp.Canvas.Pen.Width:=1;
+  bmp.Canvas.Polygon([Point(S(53),S(14)),Point(S(66),S(31)),Point(S(44),S(33))]);
+  Result:=ToolBarImages.AddMasked(bmp,clFuchsia);
+ finally
+  bmp.Free;
+ end;
+end;
+{$ENDIF}
+
 {------------------------------------------------------------------------------}
 //Offer to remove macOS metadata files from DOS images
 {------------------------------------------------------------------------------}
@@ -2153,6 +2215,8 @@ begin
  menuSaveAsCSV.Enabled :=True;
  btn_CloseImage.Enabled:=True;
  menuCloseImage.Enabled:=True;
+ if btn_RefreshImage<>nil then btn_RefreshImage.Enabled:=True;
+ if menuRefreshImage<>nil then menuRefreshImage.Enabled:=True;
  btn_FileSearch.Enabled:=True;
  menuFileSearch.Enabled:=True;
  btn_ShowReport.Enabled:=True;
@@ -3366,6 +3430,8 @@ begin
  btn_OpenImage.Enabled    :=True;
  btn_SaveImage.Enabled    :=False;
  btn_CloseImage.Enabled   :=False;
+ if btn_RefreshImage<>nil then btn_RefreshImage.Enabled:=False;
+ if menuRefreshImage<>nil then menuRefreshImage.Enabled:=False;
  btn_ImageDetails.Enabled :=False;
  btn_About.Enabled        :=True;
  btn_download.Enabled     :=False;
@@ -3632,6 +3698,21 @@ begin
  menuitem.Caption:='Select DOS Partition...';
  menuitem.OnClick:=@SelectDOSPartitionClick;
  PartitionMenu.Add(menuitem);
+ //Add Refresh Image (reads the image again, from memory), after Close Image
+ menuRefreshImage:=TMenuItem.Create(ImageMenu);
+ menuRefreshImage.Caption:='&Refresh Image';
+ menuRefreshImage.ShortCut:=TextToShortCut('F5');
+ menuRefreshImage.OnClick:=@RefreshImageClick;
+ menuRefreshImage.ImageIndex:=AddRefreshIcon;
+ menuRefreshImage.Enabled:=False;
+ ImageMenu.Insert(menuCloseImage.MenuIndex+1,menuRefreshImage);
+ btn_RefreshImage:=TToolButton.Create(ImageToolBar);
+ btn_RefreshImage.Hint:='Refresh Image (read it again, keeping any changes)';
+ btn_RefreshImage.ImageIndex:=menuRefreshImage.ImageIndex;
+ btn_RefreshImage.OnClick:=@RefreshImageClick;
+ btn_RefreshImage.Enabled:=False;
+ btn_RefreshImage.Left:=btn_CloseImage.Left+btn_CloseImage.Width;
+ btn_RefreshImage.Parent:=ImageToolBar;
 {$ENDIF}
  //Reset the changed variable
  HasChanged:=False;

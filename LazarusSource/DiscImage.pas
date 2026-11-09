@@ -1170,6 +1170,7 @@ type
   function DOSPartitionCount: Integer;
   function DOSPartitionDescription(index: Integer): String;
   function SelectDOSPartition(index: Integer): Boolean;
+  function ReloadFromData: Boolean;
   property DOSPartition:        Integer       read FDOSPartChoice;
   {$IFDEF CPU64}
   property Streamed:            Boolean       read FStreamed;

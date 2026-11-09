@@ -278,6 +278,26 @@ begin
 end;
 
 {-------------------------------------------------------------------------------
+Read the image again from the data in memory (keeping any changes), so that
+everything shows as it is actually stored
+-------------------------------------------------------------------------------}
+function TDiscImage.ReloadFromData: Boolean;
+var
+ oldname: String='';
+begin
+ Result:=False;
+ if Length(Fdata)=0 then exit;
+ //Re-ID-ing resets the image filename, so keep a copy
+ oldname:=imagefilename;
+ if IDImage then
+ begin
+  ReadImage;
+  Result:=True;
+ end;
+ imagefilename:=oldname;
+end;
+
+{-------------------------------------------------------------------------------
 ID a DOS Partition, with header
 -------------------------------------------------------------------------------}
 function TDiscImage.IDDOSPartition(ctr: Cardinal): Boolean;
@@ -1685,6 +1705,12 @@ begin
        FDisc[Length(FDisc)-1].Parent   :=dir;
        FDisc[Length(FDisc)-1].Sector   :=file_details.Sector;
        SetLength(FDisc[Length(FDisc)-1].Entries,0);
+       //It is new, so there is nothing more to read in (otherwise it would be
+       //read again later, losing track of anything created inside it)
+       FDisc[Length(FDisc)-1].BeenRead    :=True;
+       FDisc[Length(FDisc)-1].DOSPartition:=True;
+       FDisc[Length(FDisc)-1].Partition   :=FDisc[dir].Partition;
+       FDisc[Length(FDisc)-1].Length      :=Length(buffer);
        //Update the 'self' location, if not the root
        if file_details.Filename<>dosrootname then
         Write16b(file_details.Sector,$1A,buffer);
@@ -2312,6 +2338,7 @@ Move a file/directory
 -------------------------------------------------------------------------------}
 function TDiscImage.MoveDOSFile(filename,directory: String): Integer;
 var
+ buffer   : TDIByteArray=nil;
  direntry : TDirEntry=();
  sdir     : Cardinal=0;
  sentry   : Cardinal=0;
@@ -2331,12 +2358,14 @@ begin
   if(FileExists(directory,ddir,dentry))or(directory=dosrootname)then
   begin
    //Make sure it has been read in
-   if not FDisc[FDisc[ddir].Entries[dentry].DirRef].BeenRead then
-    ReadDirectory(directory);
+   if directory<>dosrootname then
+    if not FDisc[FDisc[ddir].Entries[dentry].DirRef].BeenRead then
+     ReadDirectory(directory);
    Result:=-10;//Can't move to the same directory
-   //Destination directory reference
-   ddir:=0;//Root
-   if directory<>dosrootname then ddir:=FDisc[ddir].Entries[dentry].DirRef;
+   //Destination directory reference (ddir is where the destination's own
+   //entry is, so take its DirRef before setting it)
+   if directory<>dosrootname then ddir:=FDisc[ddir].Entries[dentry].DirRef
+   else ddir:=0;//Root
    if ddir<>sdir then //Can't move into the same directory
    begin
     Result:=-3; //File already exists in destination directory
@@ -2349,6 +2378,24 @@ begin
      Result:=InsertDOSEntry(ddir,direntry);
      //Now remove from the original directory
      RemoveDOSEntry(sdir,sentry);
+     //A directory needs to know about its new parent
+     if(direntry.DirRef>=0)and(direntry.DirRef<Length(FDisc))then
+     begin
+      FDisc[direntry.DirRef].Parent:=ddir;
+      //Its '..' entry needs to point to the new parent (0 for the root)
+      buffer:=ReadDOSObject(direntry.Sector);
+      if Length(buffer)>=64 then
+      begin
+       if ddir=0 then Write16b(0,$20+$1A,buffer)
+       else Write16b(FDisc[ddir].Sector,$20+$1A,buffer);
+       WriteDOSObject(buffer,GetClusterChain(direntry.Sector));
+      end;
+      //And everything in it has a new path
+      for ptr:=0 to Length(FDisc)-1 do
+       if Length(FDisc[ptr].Entries)>0 then
+        for sentry:=0 to Length(FDisc[ptr].Entries)-1 do
+         FDisc[ptr].Entries[sentry].Parent:=GetParent(ptr);
+     end;
     end;
    end;
   end;
