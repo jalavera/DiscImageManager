@@ -220,6 +220,34 @@ begin
 end;
 
 {-------------------------------------------------------------------------------
+Is this a file DOS needs to boot (or one with the System attribute)? These are
+not moved when the root is sorted.
+-------------------------------------------------------------------------------}
+function DOSSystemEntry(const A: TDirEntry): Boolean;
+var
+ n: String='';
+begin
+ n:=UpperCase(A.ShortFilename);
+ if n='' then n:=UpperCase(A.Filename);
+ Result:=(n='IO.SYS')or(n='MSDOS.SYS')or(n='IBMBIO.COM')or(n='IBMDOS.COM')
+       or(n='DRBIOS.SYS')or(n='DRBDOS.SYS')
+       or(Pos('S',UpperCase(A.Attributes))>0);
+end;
+
+{-------------------------------------------------------------------------------
+Is this entry in the root one that sorting will not move?
+-------------------------------------------------------------------------------}
+function TDiscImage.IsDOSSystemEntry(dir,entry: Integer): Boolean;
+begin
+ Result:=False;
+ if GetMajorFormatNumber<>diDOSPlus then exit;
+ if(dir<0)or(dir>=Length(FDisc))then exit;
+ if(entry<0)or(entry>=Length(FDisc[dir].Entries))then exit;
+ if FDisc[dir].Parent<>-1 then exit;
+ Result:=DOSSystemEntry(FDisc[dir].Entries[entry]);
+end;
+
+{-------------------------------------------------------------------------------
 Sort the entries of every directory (how: 0=name, 1=date, 2=size). Directories
 come before files. In the root, the system files (IO.SYS, MSDOS.SYS, IBMBIO.COM,
 IBMDOS.COM, and anything with the System attribute) are kept first, in the
@@ -237,16 +265,8 @@ var
  isroot : Boolean=False;
  changed: array of Boolean=nil;
  function Pinned(const A: TDirEntry): Boolean;
- var
-  n: String='';
  begin
-  Result:=False;
-  if not isroot then exit;
-  n:=UpperCase(A.ShortFilename);
-  if n='' then n:=UpperCase(A.Filename);
-  Result:=(n='IO.SYS')or(n='MSDOS.SYS')or(n='IBMBIO.COM')or(n='IBMDOS.COM')
-        or(n='DRBIOS.SYS')or(n='DRBDOS.SYS')
-        or(Pos('S',UpperCase(A.Attributes))>0);
+  Result:=(isroot)and(DOSSystemEntry(A));
  end;
  //Should A go before B?
  function Before(const A,B: TDirEntry): Boolean;

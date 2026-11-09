@@ -32,7 +32,7 @@ procedure TranslateAllForms;
 implementation
 
 const
- Pairs: array[0..376,0..1] of String = (
+ Pairs: array[0..380,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -409,6 +409,10 @@ const
   ('Do not sort','No ordenis'),
   ('Sorting files','Ordenant els fitxers'),
   ('Nothing to sort: the files are already in that order','No cal ordenar: els fitxers ja estan en aquest ordre'),
+  ('Name','Nom'),
+  ('Attr.','Atrib.'),
+  ('Size','Mida'),
+  ('Modified','Modificat'),
   ('Save Side As','Desa la cara com a')
  );
 

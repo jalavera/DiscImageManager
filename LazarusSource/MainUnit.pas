@@ -453,6 +453,13 @@ type
    Shift: TShiftState; X, Y: Integer);
   function AddRefreshIcon: Integer;
   function AddSortIcon: Integer;
+  procedure DoSortFiles(code: Integer;quiet: Boolean);
+  procedure HeaderBoxPaint(Sender: TObject);
+  procedure HeaderBoxMouseUp(Sender: TObject; Button: TMouseButton;
+   Shift: TShiftState; X, Y: Integer);
+  procedure DirListResized(Sender: TObject);
+  function ColumnAt(X: Integer): Integer;
+  function EntryCRC(dir,entry: Integer): String;
   procedure SortFilesClick(Sender: TObject);
   procedure SortButtonClick(Sender: TObject);
   procedure DefragSortClick(Sender: TObject);
@@ -514,6 +521,13 @@ type
    SortPopup           :TPopupMenu;
    btn_SortFiles       :TToolButton;
    DefragSort          :Integer; //-1 = do not sort when defragging, else 0..5
+   //File list columns (Name, Attributes, Size, Modified, CRC32)
+   HeaderBox           :TPaintBox;
+   ColW                :array[0..4] of Integer;
+   HeaderSortCol       :Integer; //Column the list was last sorted by (-1 none)
+   HeaderSortDesc      :Boolean;
+   CRCCache            :TStringList;
+   LastShownImage      :String;
    StartupChecked      :Boolean;
    LastDropName        :String;
    LastDropTime        :QWord;
@@ -2232,13 +2246,25 @@ end;
 //descending)
 {------------------------------------------------------------------------------}
 procedure TMainForm.SortFilesClick(Sender: TObject);
-var
- code: Integer=0;
 begin
- if not(Sender is TMenuItem) then exit;
- code:=TMenuItem(Sender).Tag;
+ if Sender is TMenuItem then DoSortFiles(TMenuItem(Sender).Tag,False);
+end;
+
+{------------------------------------------------------------------------------}
+//Do the sorting (from the menus, the button or the column headings)
+{------------------------------------------------------------------------------}
+procedure TMainForm.DoSortFiles(code: Integer;quiet: Boolean);
+begin
  if(code<0)or(code>5)then exit;
  if Image.MajorFormatNumber<>diDOSPlus then exit;
+ //Show it on the column headings: 0 name, 1 date, 2 size
+ case code div 2 of
+  0: HeaderSortCol:=0;
+  1: HeaderSortCol:=3;
+  2: HeaderSortCol:=2;
+ end;
+ HeaderSortDesc:=Odd(code);
+ if HeaderBox<>nil then HeaderBox.Invalidate;
  ProgressForm.Show;
  UpdateProgress('Sorting files');
  Application.ProcessMessages;
@@ -2252,8 +2278,137 @@ begin
  else
  begin
   ProgressForm.Hide;
-  ShowInfo('Nothing to sort: the files are already in that order');
+  if not quiet then
+   ShowInfo('Nothing to sort: the files are already in that order');
  end;
+end;
+
+{------------------------------------------------------------------------------}
+//Which column is at this position? (-1 if none)
+{------------------------------------------------------------------------------}
+function TMainForm.ColumnAt(X: Integer): Integer;
+var
+ i : Integer=0;
+ x0: Integer=0;
+begin
+ Result:=-1;
+ x0:=0;
+ for i:=0 to 4 do
+ begin
+  if(X>=x0)and(X<x0+ColW[i])then exit(i);
+  inc(x0,ColW[i]);
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Draw the column headings
+{------------------------------------------------------------------------------}
+procedure TMainForm.HeaderBoxPaint(Sender: TObject);
+const
+ Titles: array[0..4] of String=('Name','Attr.','Size','Modified','CRC32');
+var
+ i  : Integer=0;
+ x0 : Integer=0;
+ tw : Integer=0;
+ ty : Integer=0;
+ cx : Integer=0;
+ cy : Integer=0;
+ t  : String='';
+begin
+ with HeaderBox.Canvas do
+ begin
+  Brush.Style:=bsSolid;
+  Brush.Color:=clBtnFace;
+  FillRect(0,0,HeaderBox.Width,HeaderBox.Height);
+  Pen.Color:=clBtnShadow;
+  Pen.Width:=1;
+  Line(0,HeaderBox.Height-1,HeaderBox.Width,HeaderBox.Height-1);
+  Font.Color:=clBtnText;
+  x0:=0;
+  for i:=0 to 4 do
+  begin
+   t:=_T(Titles[i]);
+   ty:=(HeaderBox.Height-TextHeight(t))div 2;
+   Brush.Style:=bsClear;
+   if i=2 then //Size is right aligned, like the numbers
+   begin
+    tw:=TextWidth(t);
+    TextOut(x0+ColW[i]-tw-6,ty,t);
+   end
+   else TextOut(x0+4,ty,t);
+   //Sort direction
+   if i=HeaderSortCol then
+   begin
+    Brush.Style:=bsSolid;
+    Brush.Color:=clBtnShadow;
+    Pen.Color:=clBtnShadow;
+    if i=2 then cx:=x0+8 else cx:=x0+TextWidth(t)+12;
+    cy:=HeaderBox.Height div 2;
+    if HeaderSortDesc then
+     Polygon([Point(cx-4,cy-2),Point(cx+4,cy-2),Point(cx,cy+3)])
+    else
+     Polygon([Point(cx-4,cy+2),Point(cx+4,cy+2),Point(cx,cy-3)]);
+    Brush.Color:=clBtnFace;
+   end;
+   inc(x0,ColW[i]);
+   //Separator
+   Pen.Color:=clBtnShadow;
+   if i<4 then Line(x0-1,3,x0-1,HeaderBox.Height-4);
+  end;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Click on a column heading: sort by it, ascending, then descending
+{------------------------------------------------------------------------------}
+procedure TMainForm.HeaderBoxMouseUp(Sender: TObject; Button: TMouseButton;
+ Shift: TShiftState; X, Y: Integer);
+var
+ col : Integer=0;
+ desc: Boolean=False;
+begin
+ if Button<>mbLeft then exit;
+ if Image.MajorFormatNumber<>diDOSPlus then exit;
+ col:=ColumnAt(X);
+ //Attributes and CRC32 can not be sorted by
+ if not(col in [0,2,3]) then exit;
+ if col=HeaderSortCol then desc:=not HeaderSortDesc else desc:=False;
+ case col of
+  0: DoSortFiles(0+Ord(desc),True);
+  2: DoSortFiles(4+Ord(desc),True);
+  3: DoSortFiles(2+Ord(desc),True);
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//The file list has changed size, so the columns move
+{------------------------------------------------------------------------------}
+procedure TMainForm.DirListResized(Sender: TObject);
+begin
+ DirList.Invalidate;
+ if HeaderBox<>nil then HeaderBox.Invalidate;
+end;
+
+{------------------------------------------------------------------------------}
+//CRC32 of a file, remembered so it is not worked out every time it is drawn
+{------------------------------------------------------------------------------}
+function TMainForm.EntryCRC(dir,entry: Integer): String;
+var
+ key: String='';
+ i  : Integer=0;
+begin
+ Result:='';
+ if(dir<0)or(dir>=Length(Image.Disc))then exit;
+ if(entry<0)or(entry>=Length(Image.Disc[dir].Entries))then exit;
+ if Image.Disc[dir].Entries[entry].DirRef<>-1 then exit;
+ key:=Image.GetParent(dir)+Image.DirSep(Image.Disc[dir].Partition)
+     +Image.Disc[dir].Entries[entry].Filename;
+ i:=CRCCache.IndexOfName(key+'|'+IntToStr(Image.Disc[dir].Entries[entry].Length)
+                        +'|'+IntToStr(Image.Disc[dir].Entries[entry].Sector));
+ if i>=0 then exit(CRCCache.ValueFromIndex[i]);
+ Result:=Image.GetFileCRC(key,entry);
+ CRCCache.Add(key+'|'+IntToStr(Image.Disc[dir].Entries[entry].Length)
+             +'|'+IntToStr(Image.Disc[dir].Entries[entry].Sector)+'='+Result);
 end;
 
 {------------------------------------------------------------------------------}
@@ -2481,6 +2636,14 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.ShowNewImage(title: String);
 begin
+ //Forget the CRC32s, and the sort order shown if this is another image
+ if CRCCache<>nil then CRCCache.Clear;
+ if title<>LastShownImage then
+ begin
+  HeaderSortCol:=-1;
+  LastShownImage:=title;
+  if HeaderBox<>nil then HeaderBox.Invalidate;
+ end;
  WriteToDebug('MainForm.ShowNewImage('+title+')');
  //Clear all the labels, and enable/disable the buttons
  ResetFileFields;
@@ -4057,6 +4220,22 @@ begin
   menuitem.OnClick:=@DefragSortClick;
   menuDefragSort.Add(menuitem);
  end;
+ //Column headings above the file list
+ ColW[0]:=200; ColW[1]:=60; ColW[2]:=90; ColW[3]:=150; ColW[4]:=90;
+ HeaderSortCol:=-1;
+ HeaderSortDesc:=False;
+ CRCCache:=TStringList.Create;
+ CRCCache.Sorted:=True;
+ HeaderBox:=TPaintBox.Create(ImageContentsPanel);
+ HeaderBox.Parent:=ImageContentsPanel;
+ HeaderBox.Top:=lb_contents.Top+lb_contents.Height;
+ HeaderBox.Height:=20;
+ HeaderBox.Align:=alTop;
+ HeaderBox.Font.Name:='Tahoma';
+ HeaderBox.Font.Size:=8;
+ HeaderBox.OnPaint:=@HeaderBoxPaint;
+ HeaderBox.OnMouseUp:=@HeaderBoxMouseUp;
+ ImageContentsPanel.OnResize:=@DirListResized;
  //Clicking on the disc name in the status bar lets it be changed
  ImageDetails.OnMouseUp:=@ImageDetailsMouseUp;
  //Language menu (the caption is the same in every language)
@@ -6754,9 +6933,31 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.DirListCustomDraw(Sender: TCustomTreeView;
  const ARect: TRect; var DefaultDraw: Boolean);
+var
+ cw : Integer=0;
+ nw : Integer=0;
 begin
  //Tile the tree
  TileCanvas(Sender.Canvas,ARect);
+ //Work out the widths of the columns, from the size of the characters
+ if Sender=DirList then
+ begin
+  Sender.Canvas.Font.Style:=[];
+  cw:=Sender.Canvas.TextWidth('0');
+  if cw<5 then cw:=7;
+  nw:=DirList.ClientWidth-(cw*4+12)-(cw*9+14)-(cw*16+12)-(cw*8+12);
+  if nw<120 then nw:=120;
+  if(ColW[0]<>nw)or(ColW[1]<>cw*4+12)then
+  begin
+   ColW[0]:=nw;
+   ColW[1]:=cw*4+12;
+   ColW[2]:=cw*9+14;
+   ColW[3]:=cw*16+12;
+   ColW[4]:=cw*8+12;
+   if HeaderBox<>nil then HeaderBox.Invalidate;
+  end;
+  Sender.Canvas.Font.Style:=[fsBold];
+ end;
  //Set the height of the icons to match the font
 { if DirList.Items.Count>0 then
   DirList.ImagesWidth:=DirList.Items[0].Height-3;}
@@ -6787,6 +6988,11 @@ procedure TMainForm.DirListCustomDrawItem(Sender: TCustomTreeView;
  Node: TTreeNode; State: TCustomDrawState; var DefaultDraw: Boolean);
 var
  NodeRect : TRect;
+ cd       : Integer=0;
+ ce       : Integer=0;
+ cx       : Integer=0;
+ ct       : String='';
+ cs       : String='';
  indent   : Integer=0;
  arrowin  : Integer=0;
  arrowsize: Integer=0;
@@ -6858,6 +7064,10 @@ begin
     //Change the colour - directory broken
     if(TMyTreeNode(Node).Broken)
     and(TMyTreeNode(Node).IsDir)     then Font.Color:=$0000FF;
+    //Change the colour - DOS system files, which sorting does not move
+    if(TV=DirList)and(Node.Parent<>nil)then
+     if Image.IsDOSSystemEntry(TMyTreeNode(Node.Parent).DirRef,Node.Index) then
+      Font.Color:=$000080;
     //Change the colour - selected item
     if cdsSelected in State then
     begin
@@ -6869,8 +7079,58 @@ begin
               NodeRect.Left+TextWidth(Node.Text),NodeRect.Bottom);
      Font.Color:=TV.SelectionFontColor; //Foreground
     end else Brush.Style:=bsClear; //Clear background for everything else
-    //Finally, write out the text
-    TextOut(NodeRect.Left,NodeRect.Top,Node.Text);
+    //Finally, write out the text (leaving room for the columns)
+    if(TV=DirList)and(Node.Parent<>nil)then
+     TextRect(Rect(NodeRect.Left,NodeRect.Top,ColW[0]-4,NodeRect.Bottom),
+              NodeRect.Left,NodeRect.Top,Node.Text)
+    else
+     TextOut(NodeRect.Left,NodeRect.Top,Node.Text);
+    //The columns: attributes, size, date modified and CRC32
+    if(TV=DirList)and(Node.Parent<>nil)and(Image<>nil)then
+    begin
+     cd:=TMyTreeNode(Node.Parent).DirRef;
+     ce:=Node.Index;
+     if(cd>=0)and(cd<Length(Image.Disc))then
+      if ce<Length(Image.Disc[cd].Entries)then
+      begin
+       Brush.Style:=bsClear;
+       Font.Style:=[];
+       Font.Color:=$404040;
+       if Image.IsDOSSystemEntry(cd,ce) then Font.Color:=$000080;
+       cx:=ColW[0];
+       //Attributes
+       ct:=Image.Disc[cd].Entries[ce].Attributes;
+       if Image.MajorFormatNumber=diDOSPlus then
+       begin
+        cs:='';
+        if Pos('H',ct)>0 then cs:=cs+'H' else cs:=cs+'-';
+        if Pos('S',ct)>0 then cs:=cs+'S' else cs:=cs+'-';
+        if Pos('R',ct)>0 then cs:=cs+'R' else cs:=cs+'-';
+        if Pos('A',ct)>0 then cs:=cs+'A' else cs:=cs+'-';
+        ct:=cs;
+       end;
+       TextRect(Rect(cx,NodeRect.Top,cx+ColW[1]-2,NodeRect.Bottom),cx+4,NodeRect.Top,ct);
+       inc(cx,ColW[1]);
+       //Size (not for directories)
+       if Image.Disc[cd].Entries[ce].DirRef=-1 then
+       begin
+        ct:=IntToStr(Image.Disc[cd].Entries[ce].Length);
+        TextOut(cx+ColW[2]-TextWidth(ct)-6,NodeRect.Top,ct);
+       end;
+       inc(cx,ColW[2]);
+       //Date modified
+       if Image.Disc[cd].Entries[ce].TimeStamp>0 then
+       begin
+        ct:=FormatDateTime('dd/mm/yyyy hh:nn',Image.Disc[cd].Entries[ce].TimeStamp);
+        TextRect(Rect(cx,NodeRect.Top,cx+ColW[3]-2,NodeRect.Bottom),cx+4,NodeRect.Top,ct);
+       end;
+       inc(cx,ColW[3]);
+       //CRC32
+       ct:=EntryCRC(cd,ce);
+       TextOut(cx+4,NodeRect.Top,ct);
+       Font.Style:=[fsBold];
+      end;
+    end;
    end;
 //  end;
  end;
