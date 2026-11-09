@@ -465,7 +465,7 @@ type
   procedure SortByColumn(col: Integer);
   procedure LoadColumns;
   procedure SaveColumns;
-  procedure DrawColumns(C: TCanvas;Node: TTreeNode;top,bottom: Integer);
+  procedure DrawColumns(C: TCanvas;Node: TTreeNode;y1,y2: Integer);
   procedure ChangeAttributesClick(Sender: TObject);
   procedure SetWindowPlace;
   function SetEntryAttributes(dir,entry: Integer;const want: array of TCheckBoxState;
@@ -2599,7 +2599,7 @@ end;
 {------------------------------------------------------------------------------}
 //Draw the columns for one entry in the file list
 {------------------------------------------------------------------------------}
-procedure TMainForm.DrawColumns(C: TCanvas;Node: TTreeNode;top,bottom: Integer);
+procedure TMainForm.DrawColumns(C: TCanvas;Node: TTreeNode;y1,y2: Integer);
 const
  Letters = 'HSRA';
 var
@@ -2638,32 +2638,32 @@ begin
          if Pos(Letters[i],ct)>0 then
          begin
           if(pinned)and(i<=2)then C.Font.Color:=clRed else C.Font.Color:=normal;
-          C.TextOut(cx,top,Letters[i]);
+          C.TextOut(cx,y1,Letters[i]);
          end
          else
          begin
           C.Font.Color:=normal;
-          C.TextOut(cx,top,'-');
+          C.TextOut(cx,y1,'-');
          end;
          inc(cx,C.TextWidth('W'));
         end;
        end
-       else C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),cx+4,top,ct);
+       else C.TextRect(Rect(cx,y1,cx+ColW[col]-2,y2),cx+4,y1,ct);
       end;
    2: if Image.Disc[cd].Entries[ce].DirRef=-1 then //Size (not for directories)
       begin
        ct:=IntToStr(Image.Disc[cd].Entries[ce].Length);
-       C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),
-                  cx+ColW[col]-C.TextWidth(ct)-6,top,ct);
+       C.TextRect(Rect(cx,y1,cx+ColW[col]-2,y2),
+                  cx+ColW[col]-C.TextWidth(ct)-6,y1,ct);
       end;
    3: if Image.Disc[cd].Entries[ce].TimeStamp>0 then //Date modified
       begin
        ct:=FormatDateTime('dd/mm/yyyy hh:nn',Image.Disc[cd].Entries[ce].TimeStamp);
-       C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),cx+4,top,ct);
+       C.TextRect(Rect(cx,y1,cx+ColW[col]-2,y2),cx+4,y1,ct);
       end;
    4: begin //CRC32
        ct:=EntryCRC(cd,ce);
-       C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),cx+4,top,ct);
+       C.TextRect(Rect(cx,y1,cx+ColW[col]-2,y2),cx+4,y1,ct);
       end;
   end;
  end;
