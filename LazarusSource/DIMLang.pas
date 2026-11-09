@@ -32,7 +32,7 @@ procedure TranslateAllForms;
 implementation
 
 const
- Pairs: array[0..399,0..1] of String = (
+ Pairs: array[0..401,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -432,6 +432,8 @@ const
   ('Change date created','Canvia la data de creació'),
   ('The date must be written as dd/mm/yyyy hh:mm','La data s''ha d''escriure com dd/mm/aaaa hh:mm'),
   ('Version 1.6 (FAT/DOS edition) by JIMSOFT and Claude','Versió 1.6 (edició FAT/DOS) per JIMSOFT i Claude'),
+  ('(system file)','(arxiu de sistema)'),
+  ('System files, which the disc needs to start, can not be renamed, deleted or moved.','Els fitxers de sistema, que el disc necessita per arrencar, no es poden reanomenar, esborrar ni moure.'),
   ('Save Side As','Desa la cara com a')
  );
 

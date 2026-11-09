@@ -469,6 +469,8 @@ type
   procedure ChangeAttributesClick(Sender: TObject);
   procedure SetWindowPlace;
   procedure TreeExpandClick(Sender: TObject);
+  function IsBootNode(Node: TTreeNode): Boolean;
+  function RefuseBootFiles: Boolean;
   function SetEntryAttributes(dir,entry: Integer;const want: array of TCheckBoxState;
    recurse: Boolean;modt,cret: TDateTime): Integer;
   procedure DirListResized(Sender: TObject);
@@ -2331,6 +2333,32 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
+//Is this one of the files DOS needs to start (named in the boot sector, or
+//IO.SYS, MSDOS.SYS, etc)? These can not be renamed, deleted or moved.
+{------------------------------------------------------------------------------}
+function TMainForm.IsBootNode(Node: TTreeNode): Boolean;
+begin
+ Result:=False;
+ if(Node=nil)or(Image=nil)then exit;
+ if Node.Parent=nil then exit;
+ Result:=Image.IsDOSSystemEntry(TMyTreeNode(Node.Parent).DirRef,Node.Index);
+end;
+
+{------------------------------------------------------------------------------}
+//If any of the selected files are system files, say so and return True
+{------------------------------------------------------------------------------}
+function TMainForm.RefuseBootFiles: Boolean;
+var
+ i: Integer=0;
+begin
+ Result:=False;
+ for i:=0 to DirList.SelectionCount-1 do
+  if IsBootNode(DirList.Selections[i]) then Result:=True;
+ if Result then
+  ShowInfo('System files, which the disc needs to start, can not be renamed, deleted or moved.');
+end;
+
+{------------------------------------------------------------------------------}
 //Where a column starts (columns are shown in the order in ColOrder)
 {------------------------------------------------------------------------------}
 function TMainForm.ColLeft(col: Integer): Integer;
@@ -2657,7 +2685,7 @@ begin
          if cx+C.TextWidth('W')>ColLeft(col)+ColW[col] then break;
          if Pos(Letters[i],ct)>0 then
          begin
-          if(pinned)and(i<=2)then C.Font.Color:=clRed else C.Font.Color:=normal;
+          C.Font.Color:=normal;
           C.TextOut(cx,y1,Letters[i]);
          end
          else
@@ -2714,7 +2742,6 @@ begin
  Result:=0;
  if(dir<0)or(dir>=Length(Image.Disc))then exit;
  if(entry<0)or(entry>=Length(Image.Disc[dir].Entries))then exit;
- if Image.IsDOSSystemEntry(dir,entry) then exit;
  cur:=Image.Disc[dir].Entries[entry].Attributes;
  att:='';
  for i:=1 to 4 do
@@ -2792,7 +2819,6 @@ var
   e:=N.Index;
   if(d<0)or(d>=Length(Image.Disc))then exit;
   if(e<0)or(e>=Length(Image.Disc[d].Entries))then exit;
-  if Image.IsDOSSystemEntry(d,e) then begin inc(skipped); exit; end;
   SetLength(Nodes,Length(Nodes)+1);
   Nodes[Length(Nodes)-1]:=N;
   if Image.Disc[d].Entries[e].DirRef>=0 then anydir:=True;
@@ -7761,6 +7787,8 @@ begin
     txt:=Node.Text;
     if(TV=DirList)and(Node.Parent=nil)and(Image<>nil)then
      if Image.MajorFormatNumber=diDOSPlus then txt:=_T('root')+' (\)';
+    //System files say so
+    if(TV=DirList)and(IsBootNode(Node))then txt:=txt+' '+_T('(system file)');
     NodeRect:=Node.DisplayRect(False); //Text boundary rectangle
     NodeRect.Left:=NodeRect.Left+indent+TV.ImagesWidth+4; //Left pos
     NodeRect.Top:=NodeRect.Top+2;                         //Top pos
@@ -8451,6 +8479,12 @@ begin
  //A whole disc can only be dragged out of the window, not within it
  if DraggedItem<>nil then
   if DraggedItem.Parent=nil then exit;
+ //System files can be copied, but not moved
+ if(not copymode)and(IsBootNode(DraggedItem))then
+ begin
+  ShowInfo('System files, which the disc needs to start, can not be renamed, deleted or moved.');
+  exit;
+ end;
  //Are we dragging something, over something and is not the same as the source?
  if (DraggedItem<>nil)AND(Dst<>nil)
  AND((DraggedItem<>Dst)
@@ -8823,18 +8857,6 @@ begin
  if not DoNotUpdate then
  begin
   WriteToDebug('MainForm.AttributeChangeClick');
-  //DOS system files (IO.SYS, MSDOS.SYS...) are not changed
-  if DirList.SelectionCount=1 then
-   if DirList.Selected.Parent<>nil then
-    if Image.IsDOSSystemEntry(TMyTreeNode(DirList.Selected.Parent).DirRef,
-                              DirList.Selected.Index) then
-    begin
-     DoNotUpdate:=True;
-     TCheckbox(Sender).Checked:=not TCheckbox(Sender).Checked;
-     DoNotUpdate:=False;
-     ShowInfo('The attributes of system files can not be changed, so that the disc still boots');
-     exit;
-    end;
   //Determine if this is on an AFS or DOS partition
   if DirList.SelectionCount=1 then //Assuming only one item selected
   begin
@@ -8967,6 +8989,7 @@ var
  R  : Boolean=False;
 begin
  WriteToDebug('MainForm.DeleteFileClick');
+ if RefuseBootFiles then exit;
  //Result of the confirmation - assumed Yes for now
  R:=True;
  //For mulitple deletes, ensure that the user really wants to
@@ -9289,6 +9312,7 @@ end;
 procedure TMainForm.RenameFile1Click(Sender: TObject);
 begin
  WriteToDebug('MainForm.RenameFile1Click');
+ if RefuseBootFiles then exit;
  //Make sure we're not dealing with the root
  if DirList.Selected.Parent<>nil then
  begin
@@ -9340,7 +9364,7 @@ begin
   if ctrl.Name=DirList.Name then
   begin
    //Set the node to edit mode, if not the root
-   AllowEdit:=Node.Parent<>nil;
+   AllowEdit:=(Node.Parent<>nil)and(not IsBootNode(Node));
    //Save the path and name before they get edited
    PathBeforeEdit:=GetFilePath(Node);
    NameBeforeEdit:=Node.Text;
