@@ -32,7 +32,7 @@ procedure TranslateAllForms;
 implementation
 
 const
- Pairs: array[0..392,0..1] of String = (
+ Pairs: array[0..399,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -425,6 +425,13 @@ const
   ('Expand everything','Desplega-ho tot'),
   ('Collapse everything','Plega-ho tot'),
   ('Some long filenames had a path in them, so the short names are used instead. Save the image to keep the repair.','Alguns noms llargs contenien un camí, així que s''utilitzen els noms curts. Desa la imatge per conservar la reparació.'),
+  ('Created','Creat'),
+  ('By date created (oldest first)','Per data de creació (els més antics primer)'),
+  ('By date created (newest first)','Per data de creació (els més nous primer)'),
+  ('Change date modified','Canvia la data de modificació'),
+  ('Change date created','Canvia la data de creació'),
+  ('The date must be written as dd/mm/yyyy hh:mm','La data s''ha d''escriure com dd/mm/aaaa hh:mm'),
+  ('Version 1.6 (FAT/DOS edition) by JIMSOFT and Claude','Versió 1.6 (edició FAT/DOS) per JIMSOFT i Claude'),
   ('Save Side As','Desa la cara com a')
  );
 

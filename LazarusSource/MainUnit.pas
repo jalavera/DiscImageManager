@@ -470,7 +470,7 @@ type
   procedure SetWindowPlace;
   procedure TreeExpandClick(Sender: TObject);
   function SetEntryAttributes(dir,entry: Integer;const want: array of TCheckBoxState;
-   recurse: Boolean): Integer;
+   recurse: Boolean;modt,cret: TDateTime): Integer;
   procedure DirListResized(Sender: TObject);
   function ColumnAt(X: Integer): Integer;
   function EntryCRC(dir,entry: Integer): String;
@@ -534,11 +534,11 @@ type
    menuDefragSort      :TMenuItem;
    SortPopup           :TPopupMenu;
    btn_SortFiles       :TToolButton;
-   DefragSort          :Integer; //-1 = do not sort when defragging, else 0..5
+   DefragSort          :Integer; //-1 = do not sort when defragging, else 0..7
    //File list columns (Name, Attributes, Size, Modified, CRC32)
    HeaderBox           :TPaintBox;
-   ColW                :array[0..4] of Integer;
-   ColOrder            :array[0..4] of Integer; //Order shown (Name is always first)
+   ColW                :array[0..5] of Integer;
+   ColOrder            :array[0..5] of Integer; //Order shown (Name is always first)
    NameAuto            :Boolean; //The Name column fills the space left
    ColInit             :Boolean;
    HdrMode             :Integer; //0 nothing, 1 resizing, 2 moving, 3 clicking Name
@@ -737,7 +737,7 @@ type
 {$ENDIF}
    //Application Title
    ApplicationTitle   = 'Disc Image Manager';
-   ApplicationVersion = '1.50.6';
+   ApplicationVersion = '1.6.0'; //Set to 1.6.(build number) by the build
    //Current platform and architecture (compile time directive)
    TargetOS  = {$I %FPCTARGETOS%};
    TargetCPU = {$I %FPCTARGETCPU%};
@@ -766,13 +766,15 @@ uses
 
 const
  //Sort Files orders (the Tag of each menu item is the index)
- SortCaptions: array[0..5] of String=(
+ SortCaptions: array[0..7] of String=(
   'By name (A to Z)',
   'By name (Z to A)',
   'By date (oldest first)',
   'By date (newest first)',
   'By size (smallest first)',
-  'By size (largest first)');
+  'By size (largest first)',
+  'By date created (oldest first)',
+  'By date created (newest first)');
 
 {$IFNDEF DIMCONSOLE}
 {-------------------------------------------------------------------------------
@@ -1647,6 +1649,12 @@ begin
  AboutForm.lb_Version.Caption:=_T('Version ')
                               +ApplicationVersion+' '
                               +platform+' ('+arch+')';
+ //Credits for this version
+ AboutForm.AdditionsByLabel.Height:=44;
+ AboutForm.AdditionsByLabel.WordWrap:=True;
+ AboutForm.AdditionsByLabel.Caption:=
+                    _T('with additions by Greg Cook and Phil Pemberton')+LineEnding
+                   +_T('Version 1.6 (FAT/DOS edition) by JIMSOFT and Claude');
  //Show the Form, as a modal
  AboutForm.ShowModal;
 end;
@@ -2293,13 +2301,14 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.DoSortFiles(code: Integer;quiet: Boolean);
 begin
- if(code<0)or(code>5)then exit;
+ if(code<0)or(code>7)then exit;
  if Image.MajorFormatNumber<>diDOSPlus then exit;
  //Show it on the column headings: 0 name, 1 date, 2 size
  case code div 2 of
   0: HeaderSortCol:=0;
   1: HeaderSortCol:=3;
   2: HeaderSortCol:=2;
+  3: HeaderSortCol:=5;
  end;
  HeaderSortDesc:=Odd(code);
  if HeaderBox<>nil then HeaderBox.Invalidate;
@@ -2329,7 +2338,7 @@ var
  p: Integer=0;
 begin
  Result:=0;
- for p:=0 to 4 do
+ for p:=0 to 5 do
  begin
   if ColOrder[p]=col then exit;
   inc(Result,ColW[ColOrder[p]]);
@@ -2346,7 +2355,7 @@ var
 begin
  Result:=-1;
  x0:=0;
- for p:=0 to 4 do
+ for p:=0 to 5 do
  begin
   if(X>=x0)and(X<x0+ColW[ColOrder[p]])then exit(ColOrder[p]);
   inc(x0,ColW[ColOrder[p]]);
@@ -2363,7 +2372,7 @@ var
 begin
  Result:=-1;
  x0:=0;
- for p:=0 to 4 do
+ for p:=0 to 5 do
  begin
   inc(x0,ColW[ColOrder[p]]);
   if Abs(X-x0)<=3 then exit(ColOrder[p]);
@@ -2378,7 +2387,7 @@ var
  L   : TStringList=nil;
  i   : Integer=0;
  v   : Integer=0;
- seen: array[0..4] of Boolean;
+ seen: array[0..5] of Boolean;
  ok  : Boolean=True;
 begin
  if DIMReg=nil then exit;
@@ -2386,10 +2395,10 @@ begin
  try
   //Widths: first whether the Name column fills the space, then the widths
   L.CommaText:=DIMReg.GetRegValS('ColWidths','');
-  if L.Count=6 then
+  if L.Count=7 then
   begin
    NameAuto:=L[0]<>'0';
-   for i:=0 to 4 do
+   for i:=0 to 5 do
    begin
     v:=StrToIntDef(L[i+1],0);
     if v>=20 then ColW[i]:=v;
@@ -2397,10 +2406,10 @@ begin
   end;
   //Order
   L.CommaText:=DIMReg.GetRegValS('ColOrder','');
-  if L.Count=5 then
+  if L.Count=6 then
   begin
-   for i:=0 to 4 do seen[i]:=False;
-   for i:=0 to 4 do
+   for i:=0 to 5 do seen[i]:=False;
+   for i:=0 to 5 do
    begin
     v:=StrToIntDef(L[i],-1);
     if(v<0)or(v>4)then ok:=False else
@@ -2410,7 +2419,7 @@ begin
     end;
    end;
    if(ok)and(StrToIntDef(L[0],-1)=0)then
-    for i:=0 to 4 do ColOrder[i]:=StrToIntDef(L[i],i);
+    for i:=0 to 5 do ColOrder[i]:=StrToIntDef(L[i],i);
   end;
  finally
   L.Free;
@@ -2427,10 +2436,10 @@ var
 begin
  if DIMReg=nil then exit;
  if NameAuto then t:='1' else t:='0';
- for i:=0 to 4 do t:=t+','+IntToStr(ColW[i]);
+ for i:=0 to 5 do t:=t+','+IntToStr(ColW[i]);
  DIMReg.SetRegValS('ColWidths',t);
  t:=IntToStr(ColOrder[0]);
- for i:=1 to 4 do t:=t+','+IntToStr(ColOrder[i]);
+ for i:=1 to 5 do t:=t+','+IntToStr(ColOrder[i]);
  DIMReg.SetRegValS('ColOrder',t);
 end;
 
@@ -2439,7 +2448,7 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.HeaderBoxPaint(Sender: TObject);
 const
- Titles: array[0..4] of String=('Name','Attr.','Size','Modified','CRC32');
+ Titles: array[0..5] of String=('Name','Attr.','Size','Modified','CRC32','Created');
 var
  p  : Integer=0;
  i  : Integer=0;
@@ -2459,7 +2468,7 @@ begin
   Line(0,HeaderBox.Height-1,HeaderBox.Width,HeaderBox.Height-1);
   Font.Color:=clBtnText;
   x0:=0;
-  for p:=0 to 4 do
+  for p:=0 to 5 do
   begin
    i:=ColOrder[p];
    t:=_T(Titles[i]);
@@ -2500,12 +2509,13 @@ var
 begin
  if Image.MajorFormatNumber<>diDOSPlus then exit;
  //Attributes and CRC32 can not be sorted by
- if not((col=0)or(col=2)or(col=3)) then exit;
+ if not((col=0)or(col=2)or(col=3)or(col=5)) then exit;
  if col=HeaderSortCol then desc:=not HeaderSortDesc else desc:=False;
  case col of
   0: DoSortFiles(0+Ord(desc),True);
   2: DoSortFiles(4+Ord(desc),True);
   3: DoSortFiles(2+Ord(desc),True);
+  5: DoSortFiles(6+Ord(desc),True);
  end;
 end;
 
@@ -2584,7 +2594,7 @@ begin
       if(target>0)and(target<>HdrCol)then
       begin
        pf:=0; pt:=0;
-       for p:=0 to 4 do
+       for p:=0 to 5 do
        begin
         if ColOrder[p]=HdrCol then pf:=p;
         if ColOrder[p]=target then pt:=p;
@@ -2631,7 +2641,7 @@ begin
  if pinned then normal:=$000080;
  C.Brush.Style:=bsClear;
  C.Font.Style:=[];
- for p:=1 to 4 do
+ for p:=1 to 5 do
  begin
   col:=ColOrder[p];
   cx:=ColLeft(col);
@@ -2675,6 +2685,11 @@ begin
        ct:=EntryCRC(cd,ce);
        C.TextRect(Rect(cx,y1,cx+ColW[col]-2,y2),cx+4,y1,ct);
       end;
+   5: if Image.Disc[cd].Entries[ce].CreateTime>0 then //Date created
+      begin
+       ct:=FormatDateTime('dd/mm/yyyy hh:nn',Image.Disc[cd].Entries[ce].CreateTime);
+       C.TextRect(Rect(cx,y1,cx+ColW[col]-2,y2),cx+4,y1,ct);
+      end;
   end;
  end;
  C.Font.Style:=[fsBold];
@@ -2686,7 +2701,7 @@ end;
 //System files are left alone. Returns how many were changed.
 {------------------------------------------------------------------------------}
 function TMainForm.SetEntryAttributes(dir,entry: Integer;
- const want: array of TCheckBoxState;recurse: Boolean): Integer;
+ const want: array of TCheckBoxState;recurse: Boolean;modt,cret: TDateTime): Integer;
 const
  Flags = 'RHSA';
 var
@@ -2717,6 +2732,9 @@ begin
    if Image.UpdateAttributes(path,att,entry) then inc(Result);
    break;
   end;
+ //The dates (negative means leave it)
+ if(modt>=0)or(cret>=0)then
+  if Image.SetDOSEntryTimes(dir,entry,modt,cret) then inc(Result);
  //And everything inside it
  if(recurse)and(Image.Disc[dir].Entries[entry].DirRef>=0)then
  begin
@@ -2725,7 +2743,7 @@ begin
   begin
    if not Image.Disc[d].BeenRead then Image.ReadDirectory(path);
    for i:=0 to Length(Image.Disc[d].Entries)-1 do
-    inc(Result,SetEntryAttributes(d,i,want,True));
+    inc(Result,SetEntryAttributes(d,i,want,True,modt,cret));
   end;
  end;
 end;
@@ -2756,6 +2774,15 @@ var
  d      : Integer=0;
  e      : Integer=0;
  rootsel: Boolean=False;
+ cbMod,
+ cbCre  : TCheckBox;
+ edMod,
+ edCre  : TEdit;
+ fs     : TFormatSettings;
+ modt,
+ cret   : TDateTime;
+ firstm,
+ firstc : TDateTime;
  Child  : TTreeNode=nil;
  procedure AddNode(N: TTreeNode);
  var
@@ -2800,7 +2827,7 @@ begin
   F.Caption:=_T('Change Attributes');
   F.BorderStyle:=bsDialog;
   F.Position:=poMainFormCenter;
-  F.ClientWidth:=360;
+  F.ClientWidth:=460;
   n:=12;
   for i:=0 to 3 do
   begin
@@ -2826,6 +2853,31 @@ begin
    cbSub.Checked:=rootsel;
    inc(n,34);
   end;
+  //Dates and times (of the first one selected, to start with)
+  firstm:=Image.Disc[TMyTreeNode(Nodes[0].Parent).DirRef].Entries[Nodes[0].Index].TimeStamp;
+  firstc:=Image.Disc[TMyTreeNode(Nodes[0].Parent).DirRef].Entries[Nodes[0].Index].CreateTime;
+  if firstm<=0 then firstm:=Now;
+  if firstc<=0 then firstc:=firstm;
+  cbMod:=TCheckBox.Create(F);
+  cbMod.Parent:=F;
+  cbMod.Left:=16;
+  cbMod.Top:=n+6;
+  cbMod.Caption:=_T('Change date modified');
+  edMod:=TEdit.Create(F);
+  edMod.Parent:=F;
+  edMod.SetBounds(F.ClientWidth-176,n+2,160,24);
+  edMod.Text:=FormatDateTime('dd/mm/yyyy hh:nn',firstm);
+  inc(n,32);
+  cbCre:=TCheckBox.Create(F);
+  cbCre.Parent:=F;
+  cbCre.Left:=16;
+  cbCre.Top:=n+6;
+  cbCre.Caption:=_T('Change date created');
+  edCre:=TEdit.Create(F);
+  edCre.Parent:=F;
+  edCre.SetBounds(F.ClientWidth-176,n+2,160,24);
+  edCre.Text:=FormatDateTime('dd/mm/yyyy hh:nn',firstc);
+  inc(n,36);
   if skipped>0 then
   begin
    lb:=TLabel.Create(F);
@@ -2851,12 +2903,32 @@ begin
   F.ClientHeight:=n+48;
   if F.ShowModal<>mrOK then exit;
   for i:=0 to 3 do want[i]:=cb[i].State;
+  //Read the dates, if they are to be changed
+  fs:=DefaultFormatSettings;
+  fs.DateSeparator:='/';
+  fs.TimeSeparator:=':';
+  fs.ShortDateFormat:='dd/mm/yyyy';
+  fs.ShortTimeFormat:='hh:nn';
+  modt:=-1;
+  cret:=-1;
+  if cbMod.Checked then
+   if not TryStrToDateTime(Trim(edMod.Text),modt,fs) then
+   begin
+    ShowInfo('The date must be written as dd/mm/yyyy hh:mm');
+    exit;
+   end;
+  if cbCre.Checked then
+   if not TryStrToDateTime(Trim(edCre.Text),cret,fs) then
+   begin
+    ShowInfo('The date must be written as dd/mm/yyyy hh:mm');
+    exit;
+   end;
   //Apply to each one
   total:=0;
   for i:=0 to Length(Nodes)-1 do
    total:=total+SetEntryAttributes(TMyTreeNode(Nodes[i].Parent).DirRef,
                                    Nodes[i].Index,want,
-                                   (cbSub<>nil)and(cbSub.Checked));
+                                   (cbSub<>nil)and(cbSub.Checked),modt,cret);
   if total>0 then
   begin
    HasChanged:=True;
@@ -4711,7 +4783,7 @@ begin
  menuSortFiles.Enabled:=False;
  FilesMenu.Add(menuSortFiles);
  SortPopup:=TPopupMenu.Create(Self);
- for si:=0 to 5 do
+ for si:=0 to 7 do
  begin
   menuitem:=TMenuItem.Create(menuSortFiles);
   menuitem.Caption:=_T(SortCaptions[si]);
@@ -4732,12 +4804,12 @@ begin
  btn_SortFiles.Left:=btn_DuplicateFile.Left+btn_DuplicateFile.Width;
  btn_SortFiles.Parent:=FilesToolBar;
  DefragSort:=Integer(DIMReg.GetRegValI('DefragSort',0))-1;
- if(DefragSort<-1)or(DefragSort>5)then DefragSort:=-1;
+ if(DefragSort<-1)or(DefragSort>7)then DefragSort:=-1;
  menuDefragSort:=TMenuItem.Create(menuDefrag.Parent);
  menuDefragSort.Caption:=_T('Sort When Defragging');
  menuDefragSort.ImageIndex:=menuSortFiles.ImageIndex;
  menuDefrag.Parent.Insert(menuDefrag.MenuIndex+1,menuDefragSort);
- for si:=-1 to 5 do
+ for si:=-1 to 7 do
  begin
   menuitem:=TMenuItem.Create(menuDefragSort);
   if si<0 then menuitem.Caption:=_T('Do not sort')
@@ -4750,7 +4822,7 @@ begin
   menuDefragSort.Add(menuitem);
  end;
  //Column headings above the file list
- ColW[0]:=200; ColW[1]:=60; ColW[2]:=90; ColW[3]:=150; ColW[4]:=90;
+ ColW[0]:=200; ColW[1]:=60; ColW[2]:=90; ColW[3]:=150; ColW[4]:=90; ColW[5]:=150;
  HeaderSortCol:=-1;
  HeaderSortDesc:=False;
  CRCCache:=TStringList.Create;
@@ -4766,7 +4838,7 @@ begin
  HeaderBox.OnMouseUp:=@HeaderBoxMouseUp;
  HeaderBox.OnMouseDown:=@HeaderBoxMouseDown;
  HeaderBox.OnMouseMove:=@HeaderBoxMouseMove;
- ColOrder[0]:=0; ColOrder[1]:=1; ColOrder[2]:=2; ColOrder[3]:=3; ColOrder[4]:=4;
+ ColOrder[0]:=0; ColOrder[1]:=1; ColOrder[2]:=2; ColOrder[3]:=3; ColOrder[4]:=4; ColOrder[5]:=5;
  NameAuto:=True;
  ColInit:=False;
  //Change Attributes: in the Files menu and the right click menu
@@ -4814,7 +4886,8 @@ begin
  //Language menu (the caption is the same in every language)
  menuitem:=TMenuItem.Create(Main_Menu);
  menuitem.Caption:='Language/Idioma';
- Main_Menu.Items.Add(menuitem);
+ //Just before the Tools menu
+ Main_Menu.Items.Insert(ToolsMenu.MenuIndex,menuitem);
  menuLangEN:=TMenuItem.Create(menuitem);
  menuLangEN.Caption:='English';
  menuLangEN.RadioItem:=True;
@@ -7578,13 +7651,14 @@ begin
    ColW[2]:=cw*9+14;
    ColW[3]:=cw*16+12;
    ColW[4]:=cw*8+12;
+   ColW[5]:=cw*16+12;
    NameAuto:=True;
    LoadColumns; //Any the user has set
    ColInit:=True;
   end;
   if NameAuto then
   begin
-   nw:=DirList.ClientWidth-ColW[1]-ColW[2]-ColW[3]-ColW[4];
+   nw:=DirList.ClientWidth-ColW[1]-ColW[2]-ColW[3]-ColW[4]-ColW[5];
    if nw<120 then nw:=120;
    if ColW[0]<>nw then
    begin

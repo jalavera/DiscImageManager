@@ -24,7 +24,7 @@
       <MinorVersionNr Value="50"/>
       <RevisionNr Value="6"/>
       <Language Value="0809"/>
-      <StringTable CompanyName="GJH Software" FileDescription="Disc Image Manager for Acorn and Commodore disc formats" ProductName="Disc Image Manager" ProductVersion="1.50.6"/>
+      <StringTable CompanyName="GJH Software" FileDescription="Disc Image Manager for Acorn and Commodore disc formats" ProductName="Disc Image Manager" ProductVersion="1.6.0"/>
     </VersionInfo>
     <BuildModes Count="11">
       <Item1 Name="Native Debugger" Default="True"/>

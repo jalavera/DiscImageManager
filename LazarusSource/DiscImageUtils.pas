@@ -71,6 +71,7 @@ begin
   Sector       :=$0000;
   DirRef       :=$0000;
   TimeStamp    :=0;
+  CreateTime   :=0;
   isDOSPart    :=False;
   Sequence     :=0;
   UserNumber   :=0;

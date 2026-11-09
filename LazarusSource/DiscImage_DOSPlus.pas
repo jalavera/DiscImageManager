@@ -290,15 +290,36 @@ end;
 Is this a file DOS needs to boot (or one with the System attribute)? These are
 not moved when the root is sorted.
 -------------------------------------------------------------------------------}
-function DOSSystemEntry(const A: TDirEntry): Boolean;
+function TDiscImage.DOSBootFile(const A: TDirEntry): Boolean;
 var
- n: String='';
+ n   : String='';
+ nm  : String='';
+ ext : String='';
+ raw : String='';
+ i   : Integer=0;
+ from: Integer=0;
 begin
  n:=UpperCase(A.ShortFilename);
  if n='' then n:=UpperCase(A.Filename);
+ //The files the various DOSes need to start (and the compressed disc drivers)
  Result:=(n='IO.SYS')or(n='MSDOS.SYS')or(n='IBMBIO.COM')or(n='IBMDOS.COM')
-       or(n='DRBIOS.SYS')or(n='DRBDOS.SYS')
-       or(Pos('S',UpperCase(A.Attributes))>0);
+       or(n='DRBIOS.SYS')or(n='DRBDOS.SYS')or(n='WINBOOT.SYS')
+       or(n='DRVSPACE.BIN')or(n='DBLSPACE.BIN');
+ if Result then exit;
+ //Any other file the boot sector names (as 11 characters, e.g. 'IO      SYS')
+ if(Length(FDOSBootSector)<512)or(n='')or(Pos('.',n)=1)then exit;
+ i:=Pos('.',n);
+ if i>0 then
+ begin
+  nm :=Copy(n,1,i-1);
+  ext:=Copy(n,i+1);
+ end
+ else nm:=n;
+ if(Length(nm)>8)or(Length(ext)>3)then exit;
+ raw:=PadRight(nm,8)+PadRight(ext,3);
+ //Only look after the BIOS Parameter Block (which has the volume label in it)
+ if FATType=diFAT32 then from:=$5A else from:=$3E;
+ Result:=Pos(raw,Copy(FDOSBootSector,from+1,512-from))>0;
 end;
 
 {-------------------------------------------------------------------------------
@@ -311,7 +332,7 @@ begin
  if(dir<0)or(dir>=Length(FDisc))then exit;
  if(entry<0)or(entry>=Length(FDisc[dir].Entries))then exit;
  if FDisc[dir].Parent<>-1 then exit;
- Result:=DOSSystemEntry(FDisc[dir].Entries[entry]);
+ Result:=DOSBootFile(FDisc[dir].Entries[entry]);
 end;
 
 {-------------------------------------------------------------------------------
@@ -333,7 +354,7 @@ var
  changed: array of Boolean=nil;
  function Pinned(const A: TDirEntry): Boolean;
  begin
-  Result:=(isroot)and(DOSSystemEntry(A));
+  Result:=(isroot)and(DOSBootFile(A));
  end;
  //Should A go before B?
  function Before(const A,B: TDirEntry): Boolean;
@@ -353,6 +374,8 @@ var
   case how of
    1: if A.TimeStamp<B.TimeStamp then c:=-1
       else if A.TimeStamp>B.TimeStamp then c:=1;
+   3: if A.CreateTime<B.CreateTime then c:=-1
+      else if A.CreateTime>B.CreateTime then c:=1;
    2: if not da then
        if A.Length<B.Length then c:=-1
        else if A.Length>B.Length then c:=1;
@@ -618,6 +641,9 @@ begin
    inc(d);
   until d>=Length(FDisc);
   ReadDOSFSM;
+  //Keep the boot sector, to see which files it loads
+  FDOSBootSector:='';
+  for i:=0 to 511 do FDOSBootSector:=FDOSBootSector+Chr(ReadByte(doshead+i));
  end;
 end;
 
@@ -853,6 +879,10 @@ begin
    //Read the rest of the attributes
    Result.Entries[entry].Timestamp:=ConvertDOSTimeDate(Read16b($16+index*32,buffer),
                                                        Read16b($18+index*32,buffer));//Time/date
+   //Date created (only written by later versions of DOS - zero otherwise)
+   if Read16b($10+index*32,buffer)<>0 then
+    Result.Entries[entry].CreateTime:=ConvertDOSTimeDate(Read16b($0E+index*32,buffer),
+                                                         Read16b($10+index*32,buffer));
    Result.Entries[entry].Attributes:=ConvertDOSAttributes(attr);//Attributes
    Result.Entries[entry].Sector   :=Read16b($1A+index*32,buffer); //Starting cluster
    Result.Entries[entry].Length   :=Read32b($1C+index*32,buffer); //Filelength
@@ -1635,7 +1665,21 @@ begin
     //Attributes
     WriteByte(ConvertDOSAttributes(FDisc[dir].Entries[index].Attributes),
                                    $0B+ptr*$20,buffer);
-    //Creation/update time and date
+    //Date created (left as zero if it is not known, as DOS 3 has it)
+    WriteByte(0,$0C+ptr*$20,buffer);
+    WriteByte(0,$0D+ptr*$20,buffer);
+    if FDisc[dir].Entries[index].CreateTime>0 then
+    begin
+     Write16b(DOSTime(FDisc[dir].Entries[index].CreateTime),$0E+ptr*$20,buffer);
+     Write16b(DOSDate(FDisc[dir].Entries[index].CreateTime),$10+ptr*$20,buffer);
+    end
+    else
+    begin
+     Write16b(0,$0E+ptr*$20,buffer);
+     Write16b(0,$10+ptr*$20,buffer);
+    end;
+    Write16b(0,$12+ptr*$20,buffer); //Last access date
+    //Update time and date
     Write16b(DOSTime(FDisc[dir].Entries[index].Timestamp),$16+ptr*$20,buffer);
     Write16b(DOSDate(FDisc[dir].Entries[index].Timestamp),$18+ptr*$20,buffer);
     //Starting cluster
@@ -1891,6 +1935,7 @@ begin
       file_details.Sector:=0;
       file_details.DirRef:=-1;
       if file_details.TimeStamp=0 then file_details.TimeStamp:=Now;
+      if file_details.CreateTime=0 then file_details.CreateTime:=Now;
       Result:=InsertDOSEntry(dir,file_details);
       ReadDOSFSM;
       exit;
@@ -1928,6 +1973,7 @@ begin
        file_details.DirRef:=-1;
       //Set the date, unless it already has one (e.g. copied from another image)
       if file_details.TimeStamp=0 then file_details.TimeStamp:=Now;
+      if file_details.CreateTime=0 then file_details.CreateTime:=Now;
       //Write the data to the image
       if WriteDOSObject(buffer,fragments) then
       begin
@@ -2157,6 +2203,22 @@ begin
   //Update the copy (FAT32)
   if FATType=diFAT32 then WriteString(FPartitions[side].Name,doshead2+ptr,11,32);
  end;
+ Result:=True;
+end;
+
+{-------------------------------------------------------------------------------
+Change the dates and times modified and created of an entry (a negative value
+leaves that one as it is)
+-------------------------------------------------------------------------------}
+function TDiscImage.SetDOSEntryTimes(dir,entry: Integer;modified,created: TDateTime): Boolean;
+begin
+ Result:=False;
+ if GetMajorFormatNumber<>diDOSPlus then exit;
+ if(dir<0)or(dir>=Length(FDisc))then exit;
+ if(entry<0)or(entry>=Length(FDisc[dir].Entries))then exit;
+ if modified>=0 then FDisc[dir].Entries[entry].TimeStamp :=modified;
+ if created >=0 then FDisc[dir].Entries[entry].CreateTime:=created;
+ UpdateDOSDirectory(GetParent(dir));
  Result:=True;
 end;
 

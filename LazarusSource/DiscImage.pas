@@ -75,6 +75,7 @@ type
                             //Indirect disc address of data (ADFS E/F/E+/F+)
   DirRef      : Integer;    //Reference to directory, if directory (ADFS/AmigaDOS)
   TimeStamp   : TDateTime;  //Timestamp (ADFS D/E/E+/F/F+)
+  CreateTime  : TDateTime;  //Date and time created (DOS - 0 if not recorded)
   isDOSPart   : Boolean;    //This file is the DOS partition
   Sequence    : Byte;       //Sequence number for the file (ADFS S/M/L)
   UserNumber  : Byte;       //User number (DSK)
@@ -437,6 +438,7 @@ type
   Fdosroot,                     //Root address of the DOS Plus root partition
   afshead,                      //Address of the AFS header
   afshead2,                     //Address of the AFS header copy
+  FDOSBootSector: String;       //The DOS boot sector (to see which files it loads)
   doshead,                      //Address of the DOS Plus header, if exists
   doshead2,                     //Address of the backup DOS header, if exists (FAT32)
   dosmap,                       //Address of the DOS Plus FAT
@@ -1170,6 +1172,8 @@ type
   function RemoveDOSLongFilenames: Boolean;
   function SortDOSDirectories(how: Byte;descending: Boolean): Boolean;
   function RepairDOSNames: Boolean;
+  function DOSBootFile(const A: TDirEntry): Boolean;
+  function SetDOSEntryTimes(dir,entry: Integer;modified,created: TDateTime): Boolean;
   function IsDOSSystemEntry(dir,entry: Integer): Boolean;
   function DOSPartitionCount: Integer;
   function DOSPartitionDescription(index: Integer): String;
