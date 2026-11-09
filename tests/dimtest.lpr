@@ -246,6 +246,11 @@ begin
  Step('copying NEST2 to the root',Img.CopyFile('A:\NEST1\NEST2','A:'));
  //Move a directory up one level
  Step('moving NEST3 to NEST1',Img.MoveFile('A:\NEST1\NEST2\NEST3','A:\NEST1'));
+ //Copy with a new name that is too long for 8.3, with 8.3 names only: the
+ //copy gets a shorter name, and its contents must still go into it
+ Img.DOSUseSFN:=True;
+ Step('copying NEST2 as NEST2COPY',Img.CopyFile('A:\NEST1\NEST2','A:\NEST1','NEST2COPY'));
+ Img.DOSUseSFN:=False;
  //Read it back in and compare
  A:=TStringList.Create; B:=TStringList.Create;
  A.Text:=Listing(Img);
@@ -261,6 +266,11 @@ begin
  end
  else WriteLn('Nest: OK, ',B.Count,' entries');
  for r:=0 to B.Count-1 do if Pos('NEST',B[r])>0 then WriteLn('  ',B[r]);
+ if B.IndexOf('A:\NEST1\NEST2COP\MID.TXT 100')<0 then
+ begin
+  WriteLn('Nest: FAIL - the contents of the renamed copy are missing');
+  ok:=False;
+ end;
  //Refresh Image (read again from memory) must give the same
  if Img.ReloadFromData then
  begin
