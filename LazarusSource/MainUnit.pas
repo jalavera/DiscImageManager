@@ -3701,7 +3701,7 @@ begin
  //Add Refresh Image (reads the image again, from memory), after Close Image
  menuRefreshImage:=TMenuItem.Create(ImageMenu);
  menuRefreshImage.Caption:='&Refresh Image';
- menuRefreshImage.ShortCut:=TextToShortCut('F5');
+ menuRefreshImage.ShortCut:=ShortCut($74,[]); //F5
  menuRefreshImage.OnClick:=@RefreshImageClick;
  menuRefreshImage.ImageIndex:=AddRefreshIcon;
  menuRefreshImage.Enabled:=False;
