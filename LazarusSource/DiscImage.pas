@@ -424,6 +424,7 @@ type
   FcreateDSC,                   //Create *.dsc files with ADFS hard drives
   FAppendFiletype,              //Append the filetype to files when exporting
   FDOSUseSFN,                   //Use short filenames, even if there are long filenames (DOS)
+  FDOSBadLFN,                   //A long filename with a path in it was found (DOS)
   FHasDirs      : Boolean;      //Format is directory capable
   FDOSVolEntry  : Integer;      //Position of the volume name in the root (DOS)
   FDOSPartList  : array of TDOSMBRPart;//DOS partitions found in an MBR
@@ -1168,6 +1169,7 @@ type
                                               write FDOSUseSFN;
   function RemoveDOSLongFilenames: Boolean;
   function SortDOSDirectories(how: Byte;descending: Boolean): Boolean;
+  function RepairDOSNames: Boolean;
   function IsDOSSystemEntry(dir,entry: Integer): Boolean;
   function DOSPartitionCount: Integer;
   function DOSPartitionDescription(index: Integer): String;

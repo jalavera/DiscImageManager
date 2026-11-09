@@ -220,6 +220,73 @@ begin
 end;
 
 {-------------------------------------------------------------------------------
+A long filename without any path in it, or '' if it has characters that a
+long filename can not have
+-------------------------------------------------------------------------------}
+function CleanDOSLongName(name: String): String;
+var
+ i: Integer=0;
+begin
+ //Only what is after the last \ or /
+ i:=Length(name);
+ while(i>0)and(name[i]<>'\')and(name[i]<>'/')do dec(i);
+ if i>0 then name:=Copy(name,i+1);
+ Result:=name;
+ for i:=1 to Length(name) do
+  if(name[i]<' ')or(name[i] in [':','*','?','"','<','>','|'])then exit('');
+end;
+
+{-------------------------------------------------------------------------------
+Write back every directory, after long filenames with paths in them have been
+found when reading the image. Returns True if anything was repaired.
+-------------------------------------------------------------------------------}
+function TDiscImage.RepairDOSNames: Boolean;
+var
+ d: Integer=0;
+ e: Integer=0;
+ r: Integer=0;
+begin
+ Result:=False;
+ if GetMajorFormatNumber<>diDOSPlus then exit;
+ //Make sure every directory has been read in (which may find more)
+ d:=0;
+ while d<Length(FDisc) do
+ begin
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+   begin
+    r:=FDisc[d].Entries[e].DirRef;
+    if(r>=0)and(r<Length(FDisc))then
+     if not FDisc[r].BeenRead then
+      ReadDirectory(GetParent(d)+DirSep(0)+FDisc[d].Entries[e].Filename);
+   end;
+  inc(d);
+ end;
+ if not FDOSBadLFN then exit;
+ //Names of directories may have changed, so update the parents
+ for d:=0 to Length(FDisc)-1 do
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+   begin
+    r:=FDisc[d].Entries[e].DirRef;
+    if(r>=0)and(r<Length(FDisc))then
+    begin
+     FDisc[r].Directory:=FDisc[d].Entries[e].Filename;
+     FDisc[r].Title    :=FDisc[d].Entries[e].Filename;
+    end;
+   end;
+ for d:=0 to Length(FDisc)-1 do
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+    FDisc[d].Entries[e].Parent:=GetParent(d);
+ //Write them all back
+ for d:=0 to Length(FDisc)-1 do
+  if not FDisc[d].Deleted then UpdateDOSDirectory(GetParent(d));
+ FDOSBadLFN:=False;
+ Result:=True;
+end;
+
+{-------------------------------------------------------------------------------
 Is this a file DOS needs to boot (or one with the System attribute)? These are
 not moved when the root is sorted.
 -------------------------------------------------------------------------------}
@@ -771,6 +838,15 @@ begin
    RemoveSpaces(ext);
    //And assign to the record
    Result.Entries[entry].ShortFilename:=BuildDOSFilename(volname,ext);
+   //A long filename can not have a path (or ':' '*' '?' etc) in it. If it does,
+   //it was written wrongly, so use the short name instead (RepairDOSNames
+   //then writes the directory back without it)
+   if Result.Entries[entry].Filename<>'' then
+    if CleanDOSLongName(Result.Entries[entry].Filename)<>Result.Entries[entry].Filename then
+    begin
+     Result.Entries[entry].Filename:='';
+     FDOSBadLFN:=True;
+    end;
    //If we don't already have a long filename, then use the short one
    if Result.Entries[entry].Filename='' then
     Result.Entries[entry].Filename:=Result.Entries[entry].ShortFilename;
@@ -1744,6 +1820,14 @@ begin
  //ADFS hybrid?
  if GetMajorFormatNumber=diAcornADFS then partition:=1 else partition:=0;
  SetLength(fragments,0);
+ //A name never has a path in it
+ file_details.Filename:=CleanDOSLongName(file_details.Filename);
+ if file_details.Filename='' then
+ begin
+  file_details.Filename:=CleanDOSLongName(file_details.ShortFilename);
+  if file_details.Filename='' then file_details.Filename:='NEWFILE';
+  file_details.ShortFilename:='';
+ end;
  //Start with a negative result
  Result:=-3;//File already exists
  //Fill out the rest of the attributes
@@ -1884,6 +1968,8 @@ var
  side   : Byte=0;
 begin
  ResetDirEntry(NewFile);
+ //A name never has a path in it
+ if CleanDOSLongName(dirname)<>'' then dirname:=CleanDOSLongName(dirname);
  //ADFS hybrid?
  if GetMajorFormatNumber=diAcornADFS then side:=1 else side:=0;
  Result:=-3; //Directory already exists

@@ -468,6 +468,7 @@ type
   procedure DrawColumns(C: TCanvas;Node: TTreeNode;y1,y2: Integer);
   procedure ChangeAttributesClick(Sender: TObject);
   procedure SetWindowPlace;
+  procedure TreeExpandClick(Sender: TObject);
   function SetEntryAttributes(dir,entry: Integer;const want: array of TCheckBoxState;
    recurse: Boolean): Integer;
   procedure DirListResized(Sender: TObject);
@@ -547,6 +548,8 @@ type
    HdrMoved            :Boolean;
    menuChangeAttr,
    popChangeAttr       :TMenuItem;
+   TreePopup           :TPopupMenu; //Right click on a tree arrow
+   TreePopupNode       :TTreeNode;
    HeaderSortCol       :Integer; //Column the list was last sorted by (-1 none)
    HeaderSortDesc      :Boolean;
    CRCCache            :TStringList;
@@ -1841,6 +1844,8 @@ begin
    if not(Node.Text[i] in [':','\','/','$','*','?','"','<','>','|'])then
     Result:=Result+Node.Text[i];
  Result:=Trim(Result);
+ //A DOS root is called 'root' (as it is shown)
+ if(Node<>nil)and(Image.MajorFormatNumber=diDOSPlus)then Result:=_T('root');
  if(Result='')and(Node<>nil)and(TMyTreeNode(Node).DirRef>=0)
  and(TMyTreeNode(Node).DirRef<Length(Image.Disc))then
   Result:=Trim(Image.Title(Image.Disc[TMyTreeNode(Node).DirRef].Partition));
@@ -2085,8 +2090,14 @@ begin
   end;
   //More than one DOS partition (hard disc image)? Ask which one to use
   ChooseDOSPartition(False);
+  //Long filenames with a path in them (written wrongly before) are repaired
+  if Image.RepairDOSNames then
+  begin
+   macclean:=True;
+   ShowInfo('Some long filenames had a path in them, so the short names are used instead. Save the image to keep the repair.');
+  end;
   //Offer to remove any macOS metadata files (.DS_Store, ._*, .fseventsd...)
-  macclean:=OfferMacFileRemoval;
+  macclean:=OfferMacFileRemoval or macclean;
   //Update the display
   ShowNewImage(Image.Filename);
   //Mark the image as changed, if anything was removed
@@ -2262,9 +2273,8 @@ begin
  ok:=(Image<>nil)and(Image.MajorFormatNumber=diDOSPlus)and(Length(Image.Disc)>0);
  if menuSortFiles<>nil then menuSortFiles.Enabled:=ok;
  if btn_SortFiles<>nil then btn_SortFiles.Enabled:=ok;
- //Change Attributes needs something other than the root selected
+ //Change Attributes needs something selected (the root means everything)
  ok:=(ok)and(DirList.SelectionCount>0);
- if ok then ok:=not((DirList.SelectionCount=1)and(DirList.Selections[0].Parent=nil));
  if menuChangeAttr<>nil then menuChangeAttr.Enabled:=ok;
  if popChangeAttr<>nil then popChangeAttr.Enabled:=ok;
 end;
@@ -2745,23 +2755,38 @@ var
  anydir : Boolean=False;
  d      : Integer=0;
  e      : Integer=0;
+ rootsel: Boolean=False;
+ Child  : TTreeNode=nil;
+ procedure AddNode(N: TTreeNode);
+ var
+  k: Integer=0;
+ begin
+  d:=TMyTreeNode(N.Parent).DirRef;
+  e:=N.Index;
+  if(d<0)or(d>=Length(Image.Disc))then exit;
+  if(e<0)or(e>=Length(Image.Disc[d].Entries))then exit;
+  if Image.IsDOSSystemEntry(d,e) then begin inc(skipped); exit; end;
+  SetLength(Nodes,Length(Nodes)+1);
+  Nodes[Length(Nodes)-1]:=N;
+  if Image.Disc[d].Entries[e].DirRef>=0 then anydir:=True;
+  for k:=1 to 4 do
+   if Pos(Flags[k],Image.Disc[d].Entries[e].Attributes)>0 then inc(cnt[k-1]);
+ end;
 begin
  if Image.MajorFormatNumber<>diDOSPlus then exit;
- //What is selected (leaving out the root and the system files)
+ //What is selected (the root means everything on it; system files are left out)
  for i:=0 to 3 do cnt[i]:=0;
  for i:=0 to DirList.SelectionCount-1 do
-  if DirList.Selections[i].Parent<>nil then
+  if DirList.Selections[i].Parent<>nil then AddNode(DirList.Selections[i])
+  else
   begin
-   d:=TMyTreeNode(DirList.Selections[i].Parent).DirRef;
-   e:=DirList.Selections[i].Index;
-   if(d<0)or(d>=Length(Image.Disc))then continue;
-   if(e<0)or(e>=Length(Image.Disc[d].Entries))then continue;
-   if Image.IsDOSSystemEntry(d,e) then begin inc(skipped); continue; end;
-   SetLength(Nodes,Length(Nodes)+1);
-   Nodes[Length(Nodes)-1]:=DirList.Selections[i];
-   if Image.Disc[d].Entries[e].DirRef>=0 then anydir:=True;
-   for j:=1 to 4 do
-    if Pos(Flags[j],Image.Disc[d].Entries[e].Attributes)>0 then inc(cnt[j-1]);
+   rootsel:=True;
+   Child:=DirList.Selections[i].GetFirstChild;
+   while Child<>nil do
+   begin
+    AddNode(Child);
+    Child:=Child.GetNextSibling;
+   end;
   end;
  if Length(Nodes)=0 then
  begin
@@ -2797,6 +2822,8 @@ begin
    cbSub.Left:=16;
    cbSub.Top:=n+4;
    cbSub.Caption:=_T('Also change everything inside the selected folders');
+   //From the root, it is the whole disc
+   cbSub.Checked:=rootsel;
    inc(n,34);
   end;
   if skipped>0 then
@@ -4753,6 +4780,34 @@ begin
  popChangeAttr.OnClick:=@ChangeAttributesClick;
  popChangeAttr.Enabled:=False;
  File_Menu.Items.Add(popChangeAttr);
+ //Right click on the arrows of the tree: open/close from there, or everything
+ TreePopup:=TPopupMenu.Create(Self);
+ for si:=0 to 3 do
+ begin
+  menuitem:=TMenuItem.Create(TreePopup);
+  case si of
+   0: menuitem.Caption:=_T('Expand all from here');
+   1: menuitem.Caption:=_T('Collapse all from here');
+   2: menuitem.Caption:=_T('Expand everything');
+   3: menuitem.Caption:=_T('Collapse everything');
+  end;
+  menuitem.Tag:=si;
+  menuitem.OnClick:=@TreeExpandClick;
+  TreePopup.Items.Add(menuitem);
+ end;
+ //And the 'everything' ones in the View menu too
+ menuitem:=TMenuItem.Create(ViewMenu);
+ menuitem.Caption:='-';
+ ViewMenu.Add(menuitem);
+ for si:=2 to 3 do
+ begin
+  menuitem:=TMenuItem.Create(ViewMenu);
+  if si=2 then menuitem.Caption:=_T('Expand everything')
+  else menuitem.Caption:=_T('Collapse everything');
+  menuitem.Tag:=si;
+  menuitem.OnClick:=@TreeExpandClick;
+  ViewMenu.Add(menuitem);
+ end;
  ImageContentsPanel.OnResize:=@DirListResized;
  //Clicking on the disc name in the status bar lets it be changed
  ImageDetails.OnMouseUp:=@ImageDetailsMouseUp;
@@ -7371,10 +7426,55 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.DirListContextPopup(Sender: TObject; MousePos: TPoint;
  var Handled: Boolean);
+var
+ Node: TTreeNode=nil;
+ R   : TRect;
+ pt  : TPoint;
 begin
  WriteToDebug('MainForm.DirListContextPopup');
  //This actually pops up, on a Mac, when CTRL is pressed to add to the selection
- if ssCtrl in FormShiftState then Handled:=True; //Stops the context menu popping up
+ if ssCtrl in FormShiftState then
+ begin
+  Handled:=True; //Stops the context menu popping up
+  exit;
+ end;
+ //On the arrow of a directory? Then offer to open or close the tree
+ Node:=GetNodeAt(MousePos.Y);
+ if Node<>nil then
+  if Node.HasChildren then
+  begin
+   R:=Node.DisplayRect(False);
+   if MousePos.X<R.Left+(Node.Level*DirList.Indent)+DirList.Indent+1 then
+   begin
+    TreePopupNode:=Node;
+    pt:=DirList.ClientToScreen(MousePos);
+    TreePopup.PopUp(pt.X,pt.Y);
+    Handled:=True;
+   end;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+//Open or close the tree (Tag: 0/1 from the node clicked, 2/3 everything)
+{------------------------------------------------------------------------------}
+procedure TMainForm.TreeExpandClick(Sender: TObject);
+var
+ i: Integer=0;
+begin
+ if not(Sender is TMenuItem) then exit;
+ DirList.BeginUpdate;
+ try
+  case TMenuItem(Sender).Tag of
+   0: if NodeStillExists(TreePopupNode) then TreePopupNode.Expand(True);
+   1: if NodeStillExists(TreePopupNode) then TreePopupNode.Collapse(True);
+   2: for i:=0 to DirList.Items.Count-1 do
+       if DirList.Items[i].Parent=nil then DirList.Items[i].Expand(True);
+   3: for i:=0 to DirList.Items.Count-1 do
+       if DirList.Items[i].Parent=nil then DirList.Items[i].Collapse(True);
+  end;
+ finally
+  DirList.EndUpdate;
+ end;
 end;
 
 {------------------------------------------------------------------------------}
@@ -7529,6 +7629,7 @@ var
  arrowsize: Integer=0;
  imgidx   : Integer=0;
  TV       : TTreeView=nil;
+ txt      : String='';
 begin
  WriteToDebug('MainForm.DirListCustomDrawItem');
  if Sender is TTreeView then
@@ -7582,7 +7683,10 @@ begin
     if imgidx=-1 then imgidx:=GetImageIndex(Node,Image);
     //And draw it
     TImageList(TV.Images).StretchDraw(TV.Canvas,imgidx,NodeRect);
-    //Write out the text
+    //Write out the text (a DOS root is shown as 'root (\)')
+    txt:=Node.Text;
+    if(TV=DirList)and(Node.Parent=nil)and(Image<>nil)then
+     if Image.MajorFormatNumber=diDOSPlus then txt:=_T('root')+' (\)';
     NodeRect:=Node.DisplayRect(False); //Text boundary rectangle
     NodeRect.Left:=NodeRect.Left+indent+TV.ImagesWidth+4; //Left pos
     NodeRect.Top:=NodeRect.Top+2;                         //Top pos
@@ -7607,15 +7711,15 @@ begin
      Brush.Color:=TV.SelectionColor; //Background
      //Paint the background
      FillRect(NodeRect.Left,NodeRect.Top,
-              NodeRect.Left+TextWidth(Node.Text),NodeRect.Bottom);
+              NodeRect.Left+TextWidth(txt),NodeRect.Bottom);
      Font.Color:=TV.SelectionFontColor; //Foreground
     end else Brush.Style:=bsClear; //Clear background for everything else
     //Finally, write out the text (leaving room for the columns)
     if(TV=DirList)and(Node.Parent<>nil)then
      TextRect(Rect(NodeRect.Left,NodeRect.Top,ColW[0]-4,NodeRect.Bottom),
-              NodeRect.Left,NodeRect.Top,Node.Text)
+              NodeRect.Left,NodeRect.Top,txt)
     else
-     TextOut(NodeRect.Left,NodeRect.Top,Node.Text);
+     TextOut(NodeRect.Left,NodeRect.Top,txt);
     //The columns: attributes, size, date modified and CRC32
     if(TV=DirList)and(Node.Parent<>nil)and(Image<>nil)then
      DrawColumns(TV.Canvas,Node,NodeRect.Top,NodeRect.Bottom);

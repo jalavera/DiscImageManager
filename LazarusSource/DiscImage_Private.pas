@@ -12,6 +12,7 @@ begin
  FAFSPresent   :=False;
  FDOSPresent   :=False;
  FDOSVolInRoot :=False;
+ FDOSBadLFN    :=False;
  FDOSVolEntry  :=-1;
  secsize       :=$0100;
  bpmb          :=$0000;
