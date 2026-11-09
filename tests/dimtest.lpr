@@ -2,7 +2,7 @@ program dimtest;
 {Opens a disc image with the TDiscImage class and lists what it finds.
  Used by the "Test images" workflow.}
 {$mode objfpc}{$H+}
-uses SysUtils, Classes, DiscImage;
+uses SysUtils, Classes, Math, DiscImage;
 type
  TProgress = class
   procedure Show(Fupdate: String);
@@ -197,6 +197,76 @@ begin
  Img.Free;
 end;
 
+{Sorts every directory, reads the image back in, and checks that nothing was
+ lost and that the files are in the order asked for (system files first in the
+ root, then directories, then files)}
+function SortTest(filename: String;code: Integer): Boolean;
+var
+ Img, Check: TDiscImage;
+ A, B      : TStringList;
+ d, e      : Integer;
+ prev, cur : TDirEntry;
+ bad       : Boolean;
+ function IsSys(const X: TDirEntry): Boolean;
+ begin
+  Result:=Pos('S',X.Attributes)>0;
+ end;
+begin
+ Result:=True;
+ Img:=TDiscImage.Create;
+ Img.LoadFromFile(filename);
+ Img.ProgressIndicator:=nil;
+ A:=TStringList.Create; B:=TStringList.Create;
+ A.Text:=Listing(Img);
+ Img.SortDOSDirectories(code div 2,Odd(code));
+ Check:=TDiscImage.Create(Img);
+ B.Text:=Listing(Check);
+ A.Sort; B.Sort;
+ if A.Text<>B.Text then
+ begin
+  WriteLn('Sort ',code,': FAIL - entries changed');
+  for e:=0 to A.Count-1 do if B.IndexOf(A[e])<0 then WriteLn('  missing: ',A[e]);
+  for e:=0 to B.Count-1 do if A.IndexOf(B[e])<0 then WriteLn('  extra  : ',B[e]);
+  Result:=False;
+ end;
+ //Check the order in every directory
+ bad:=False;
+ for d:=0 to Length(Check.Disc)-1 do
+  for e:=1 to Length(Check.Disc[d].Entries)-1 do
+  begin
+   prev:=Check.Disc[d].Entries[e-1];
+   cur :=Check.Disc[d].Entries[e];
+   if(Check.Disc[d].Parent=-1)and(IsSys(prev) or IsSys(cur))then
+   begin
+    if IsSys(cur) and not IsSys(prev) then bad:=True;
+    continue;
+   end;
+   if(prev.DirRef>=0)<>(cur.DirRef>=0)then
+   begin
+    if(cur.DirRef>=0)then bad:=True;
+    continue;
+   end;
+   if(code div 2=0)and(cur.DirRef<0)then
+    if((code=0)and(CompareText(prev.Filename,cur.Filename)>0))
+    or((code=1)and(CompareText(prev.Filename,cur.Filename)<0))then bad:=True;
+   if(code div 2=2)and(cur.DirRef<0)then
+    if((code=4)and(prev.Length>cur.Length))
+    or((code=5)and(prev.Length<cur.Length))then bad:=True;
+   if bad then
+   begin
+    WriteLn('Sort ',code,': FAIL - wrong order at ',Check.GetParent(d),'\',cur.Filename);
+    break;
+   end;
+  end;
+ if bad then Result:=False;
+ if Result then WriteLn('Sort ',code,': OK');
+ for e:=0 to Min(9,Length(Check.Disc[0].Entries)-1) do
+  WriteLn('   ',Check.Disc[0].Entries[e].Filename,' ',Check.Disc[0].Entries[e].Length);
+ A.Free; B.Free;
+ Check.Free;
+ Img.Free;
+end;
+
 {Creates directories inside new directories, copies and moves them, and
  checks that all of it is there after reading the image back in, and that it
  can still be defragged}
@@ -328,6 +398,8 @@ begin
      if not RenameTest(ParamStr(1),False) then ExitCode:=3;
      if not RenameTest(ParamStr(1),True) then ExitCode:=3;
      if not NestTest(ParamStr(1)) then ExitCode:=3;
+     if not SortTest(ParamStr(1),1) then ExitCode:=3;
+     if not SortTest(ParamStr(1),4) then ExitCode:=3;
     end;
     //Again, on a fresh copy, with short filenames only
     if ParamStr(2)='defrag' then
