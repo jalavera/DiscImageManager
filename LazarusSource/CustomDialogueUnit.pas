@@ -63,7 +63,7 @@ implementation
 
 {$R *.lfm}
 
-uses MainUnit;
+uses MainUnit,DIMLang;
 
 { TCustomDialogue }
 
@@ -195,6 +195,11 @@ begin
   AbortBtnTxt :='Abort';
  end;
  if OKBtnTxt='' then OKBtnTxt:='OK';
+ //In the chosen language
+ OKBtnTxt    :=_T(OKBtnTxt);
+ CancelBtnTxt:=_T(CancelBtnTxt);
+ IgnoreBtnTxt:=_T(IgnoreBtnTxt);
+ AbortBtnTxt :=_T(AbortBtnTxt);
  //We need to briefly show the form so the controls resize
  Show;
  //Hide all the graphics
@@ -222,9 +227,9 @@ begin
  AbortButton.Caption :=AbortBtnTxt;
  //Change the title
  case style of
-  0: Caption:='Error';
-  1: Caption:='Information';
-  2: Caption:='Confirmation';
+  0: Caption:=_T('Error');
+  1: Caption:=_T('Information');
+  2: Caption:=_T('Confirmation');
  end;
  //Now hide it before we show it as a modal
  Hide;

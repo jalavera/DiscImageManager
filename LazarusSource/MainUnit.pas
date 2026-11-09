@@ -444,6 +444,10 @@ type
   function ChooseDOSPartition(always: Boolean): Boolean;
   procedure SelectDOSPartitionClick(Sender: TObject);
   procedure RefreshImageClick(Sender: TObject);
+  procedure LanguageClick(Sender: TObject);
+  procedure ActiveFormChanged(Sender: TObject);
+  procedure ImageDetailsMouseUp(Sender: TObject; Button: TMouseButton;
+   Shift: TShiftState; X, Y: Integer);
   function AddRefreshIcon: Integer;
 {$ENDIF}
   procedure ParseCommand(var Command: TStringArray);
@@ -493,6 +497,10 @@ type
    //Refresh Image button and menu item (made in FormCreate)
    btn_RefreshImage    :TToolButton;
    menuRefreshImage    :TMenuItem;
+   //Language menu, and the forms that have been translated
+   menuLangEN,
+   menuLangCA          :TMenuItem;
+   TranslatedForms     :TList;
    //To keep track of if we are dragging and if the mouse button is down
    IsDragging,
    MouseIsDown         :Boolean;
@@ -698,7 +706,7 @@ uses
   AboutUnit,NewImageUnit,ImageDetailUnit,ProgressUnit,SearchUnit,
   CustomDialogueUnit,ErrorLogUnit,SettingsUnit,ImportSelectorUnit,
   PWordEditorUnit,AFSPartitionUnit,ChangeInterleaveUnit,CSVPrefUnit,
-  ImageReportUnit,FileDragOut,{$ENDIF}ConsoleAppUnit;
+  ImageReportUnit,FileDragOut,{$ENDIF}ConsoleAppUnit,DIMLang;
 
 {$IFNDEF DIMCONSOLE}
 {-------------------------------------------------------------------------------
@@ -1570,7 +1578,7 @@ begin
  //Update the Application Title
  AboutForm.lb_Title.Caption:=ApplicationTitle;
  //Update the Application Version
- AboutForm.lb_Version.Caption:='Version '
+ AboutForm.lb_Version.Caption:=_T('Version ')
                               +ApplicationVersion+' '
                               +platform+' ('+arch+')';
  //Show the Form, as a modal
@@ -1982,9 +1990,9 @@ begin
  try
   for index:=0 to Image.DOSPartitionCount-1 do
    list.Add(Image.DOSPartitionDescription(index));
-  choice:=InputCombo('Select DOS Partition',
-                     'This image contains '+IntToStr(Image.DOSPartitionCount)
-                    +' DOS partitions. Which one do you want to work with?',
+  choice:=InputCombo(_T('Select DOS Partition'),
+                     _T('This image contains '+IntToStr(Image.DOSPartitionCount)
+                    +' DOS partitions. Which one do you want to work with?'),
                      list);
  finally
   list.Free;
@@ -2029,6 +2037,74 @@ begin
   HasChanged:=waschanged;
   UpdateImageInfo;
  end;
+end;
+
+{------------------------------------------------------------------------------}
+//Language menu: switch the user interface between English and Catalan, and
+//remember it for next time
+{------------------------------------------------------------------------------}
+procedure TMainForm.LanguageClick(Sender: TObject);
+begin
+ if Sender=menuLangCA then Language:='ca' else Language:='en';
+ DIMReg.SetRegValS('Language',Language);
+ menuLangEN.Checked:=Language='en';
+ menuLangCA.Checked:=Language='ca';
+ //Translate everything that is already open
+ TranslatedForms.Clear;
+ TranslateAllForms;
+ if Image.FormatNumber<>diInvalidImg then UpdateImageInfo;
+end;
+
+{------------------------------------------------------------------------------}
+//A window has become active: translate it, if it has not been already
+{------------------------------------------------------------------------------}
+procedure TMainForm.ActiveFormChanged(Sender: TObject);
+var
+ F: TCustomForm=nil;
+begin
+ if TranslatedForms=nil then exit;
+ F:=Screen.ActiveCustomForm;
+ if(F=nil)or(Language='en')then exit;
+ if TranslatedForms.IndexOf(F)<0 then
+ begin
+  TranslatedForms.Add(F);
+  TranslateComponent(F);
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Clicked on the status bar: the disc name can be changed by clicking on it
+{------------------------------------------------------------------------------}
+procedure TMainForm.ImageDetailsMouseUp(Sender: TObject; Button: TMouseButton;
+ Shift: TShiftState; X, Y: Integer);
+var
+ i     : Integer=0;
+ x0    : Integer=0;
+ title : String='';
+begin
+ if Button<>mbLeft then exit;
+ if Image.FormatNumber=diInvalidImg then exit;
+ //Which panel was clicked on?
+ x0:=0;
+ for i:=0 to 1 do inc(x0,ImageDetails.Panels[i].Width);
+ if(X<x0)or(X>=x0+ImageDetails.Panels[2].Width)then exit;
+ //DOS: just ask for the new name here
+ if Image.MajorFormatNumber=diDOSPlus then
+ begin
+  title:=Trim(Image.Title(0));
+  if InputQuery(_T('Disc Name'),_T('Disc (volume) name, up to 11 characters:'),title)then
+  begin
+   title:=UpperCase(LeftStr(Trim(title),11));
+   if title<>Trim(Image.Title(0)) then
+    if Image.UpdateDiscTitle(title,0) then
+    begin
+     HasChanged:=True;
+     UpdateImageInfo;
+    end;
+  end;
+ end
+ else //Anything else has its own window, which deals with all the sides
+  if btn_ImageDetails.Enabled then btn_ImageDetailsClick(Sender);
 end;
 
 {------------------------------------------------------------------------------}
@@ -2320,14 +2396,14 @@ begin
   //Double sided or not (DFS only)
   if Image.MajorFormatNumber=diAcornDFS then
    if Image.DoubleSided then
-    ImageDetails.Panels[5].Text:='Double Sided'
+    ImageDetails.Panels[5].Text:=_T('Double Sided')
    else
-    ImageDetails.Panels[5].Text:='Single Sided'
+    ImageDetails.Panels[5].Text:=_T('Single Sided')
   else
    //Partitioned DOS hard disc image?
    if Image.DOSPartitionCount>0 then
-    ImageDetails.Panels[5].Text:='Partition '+IntToStr(Image.DOSPartition+1)
-                                +' of '+IntToStr(Image.DOSPartitionCount)
+    ImageDetails.Panels[5].Text:=_T('Partition ')+IntToStr(Image.DOSPartition+1)
+                                +_T(' of ')+IntToStr(Image.DOSPartitionCount)
    else
     ImageDetails.Panels[5].Text:='';
   //Map type (ADFS/AmigaDOS only)
@@ -2697,15 +2773,15 @@ begin
  if DirList.SelectionCount>1 then
   multiple:='s';
  //Change the menu names - we'll change these to 'Directory', if needed, later
- ExtractFile1.Caption   :='&Extract File'+multiple+'...';
- menuExtractFile.Caption:='&Extract File'+multiple+'...';
- btn_download.Hint      :='Extract File'+multiple;
- RenameFile1.Caption    :='&Rename File'+multiple;
- menuRenameFile.Caption :='&Rename File'+multiple;
- btn_Rename.Hint        :='Rename File'+multiple;
- DeleteFile1.Caption    :='&Delete File'+multiple;
- menuDeleteFile.Caption :='&Delete File'+multiple;
- btn_Delete.Hint        :='Delete File'+multiple;
+ ExtractFile1.Caption   :=_T('&Extract File'+multiple+'...');
+ menuExtractFile.Caption:=_T('&Extract File'+multiple+'...');
+ btn_download.Hint      :=_T('Extract File'+multiple);
+ RenameFile1.Caption    :=_T('&Rename File'+multiple);
+ menuRenameFile.Caption :=_T('&Rename File'+multiple);
+ btn_Rename.Hint        :=_T('Rename File'+multiple);
+ DeleteFile1.Caption    :=_T('&Delete File'+multiple);
+ menuDeleteFile.Caption :=_T('&Delete File'+multiple);
+ btn_Delete.Hint        :=_T('Delete File'+multiple);
  //Enable the buttons, if there is a selection, otherwise disable
  btn_download.Enabled     :=DirList.SelectionCount>0;
  ExtractFile1.Enabled     :=btn_download.Enabled;
@@ -2751,10 +2827,10 @@ begin
  //Change the captions
  temp:='Partition';
  if Image.MajorFormatNumber=diAcornDFS then temp:='Side';
- btn_DeletePartition.Hint   :='Delete '+temp;
- menuDeletePartition.Caption:='&Delete '+temp;
- btn_SavePartition.Hint     :='Save '+temp+' As';
- menuSavePartition.Caption  :='&Save '+temp+' As...';
+ btn_DeletePartition.Hint   :=_T('Delete '+temp);
+ menuDeletePartition.Caption:=_T('&Delete '+temp);
+ btn_SavePartition.Hint     :=_T('Save '+temp+' As');
+ menuSavePartition.Caption  :=_T('&Save '+temp+' As...');
  //Disable the Add Files and Rename menu
  AddFile1.Enabled            :=False;
  btn_AddFiles.Enabled        :=False;
@@ -2973,15 +3049,15 @@ begin
      else
       filetype:='Directory';
      //Change the menu text
-     ExtractFile1.Caption   :='&Extract '+filetype+'...';
-     menuExtractFile.Caption:='&Extract '+filetype+'...';
-     btn_download.Hint      :='Extract '+filetype;
-     RenameFile1.Caption    :='&Rename '+filetype;
-     menuRenameFile.Caption :='&Rename '+filetype;
-     btn_Rename.Hint        :='Rename '+filetype;
-     DeleteFile1.Caption    :='&Delete '+filetype;
-     menuDeleteFile.Caption :='&Delete '+filetype;
-     btn_Delete.Hint        :='Delete '+filetype;
+     ExtractFile1.Caption   :=_T('&Extract '+filetype+'...');
+     menuExtractFile.Caption:=_T('&Extract '+filetype+'...');
+     btn_download.Hint      :=_T('Extract '+filetype);
+     RenameFile1.Caption    :=_T('&Rename '+filetype);
+     menuRenameFile.Caption :=_T('&Rename '+filetype);
+     btn_Rename.Hint        :=_T('Rename '+filetype);
+     DeleteFile1.Caption    :=_T('&Delete '+filetype);
+     menuDeleteFile.Caption :=_T('&Delete '+filetype);
+     btn_Delete.Hint        :=_T('Delete '+filetype);
      //Report if directory is broken and include the error code
      if (Image.Disc[dir].Entries[entry].DirRef>=0)
      and(Image.Disc[dir].Entries[entry].DirRef<Length(Image.Disc))then
@@ -2995,7 +3071,7 @@ begin
       title:=Image.Disc[Image.Disc[dir].Entries[entry].DirRef].Title;
       RemoveTopBit(title);
       if Image.MajorFormatNumber<>diISO then if title.IsEmpty then title:=' ';
-      DirTitleLabel.Caption:='Directory Title';
+      DirTitleLabel.Caption:=_T('Directory Title');
       lb_title.Caption:=title;
       ed_title.Enabled:=True; //Can be edited
      end;
@@ -3008,9 +3084,9 @@ begin
      RemoveTopBit(title);
      if Image.MajorFormatNumber<>diISO then if title.IsEmpty then title:=' ';
      if Image.MajorFormatNumber=diAcornADFS then
-      DirTitleLabel.Caption:='Directory Title'
+      DirTitleLabel.Caption:=_T('Directory Title')
      else
-      DirTitleLabel.Caption:='Disc Name';//Also see UpdateImageInfo
+      DirTitleLabel.Caption:=_T('Disc Name');//Also see UpdateImageInfo
      lb_title.Caption:=title; //Title
      ed_title.Enabled:=True; //Can be edited
      //Report if directory is broken and include the error code
@@ -3038,8 +3114,8 @@ begin
     end
     else
     begin //Can edit
-     img_Filetype.Hint:='Click to edit';
-     lb_FileType.Hint :='Click to edit';
+     img_Filetype.Hint:=_T('Click to edit');
+     lb_FileType.Hint :=_T('Click to edit');
     end;
    end;
    //Filename
@@ -3674,6 +3750,9 @@ begin
  FAppendFileType           :=DIMReg.GetRegValB('Append_Filetype',True);
  //Keep the original extension when saving DOS images
  FKeepDOSExt               :=DIMReg.GetRegValB('Keep_DOS_Ext',False);
+ //Language of the user interface ('en' or 'ca')
+ Language                  :=DIMReg.GetRegValS('Language','en');
+ if not IsKnownLanguage(Language) then Language:='en';
  //View menu options
  ViewOptions               :=DIMReg.GetRegValI('View_Options',$FFFF);
  //Toolbar order - this doesn't work currently
@@ -3695,24 +3774,47 @@ begin
 {$IFNDEF DIMCONSOLE}
  //Add the option to select the DOS partition (hard disc images)
  menuitem:=TMenuItem.Create(PartitionMenu);
- menuitem.Caption:='Select DOS Partition...';
+ menuitem.Caption:=_T('Select DOS Partition...');
  menuitem.OnClick:=@SelectDOSPartitionClick;
  PartitionMenu.Add(menuitem);
  //Add Refresh Image (reads the image again, from memory), after Close Image
  menuRefreshImage:=TMenuItem.Create(ImageMenu);
- menuRefreshImage.Caption:='&Refresh Image';
+ menuRefreshImage.Caption:=_T('&Refresh Image');
  menuRefreshImage.ShortCut:=ShortCut($74,[]); //F5
  menuRefreshImage.OnClick:=@RefreshImageClick;
  menuRefreshImage.ImageIndex:=AddRefreshIcon;
  menuRefreshImage.Enabled:=False;
  ImageMenu.Insert(menuCloseImage.MenuIndex+1,menuRefreshImage);
  btn_RefreshImage:=TToolButton.Create(ImageToolBar);
- btn_RefreshImage.Hint:='Refresh Image (read it again, keeping any changes)';
+ btn_RefreshImage.Hint:=_T('Refresh Image (read it again, keeping any changes)');
  btn_RefreshImage.ImageIndex:=menuRefreshImage.ImageIndex;
  btn_RefreshImage.OnClick:=@RefreshImageClick;
  btn_RefreshImage.Enabled:=False;
  btn_RefreshImage.Left:=btn_CloseImage.Left+btn_CloseImage.Width;
  btn_RefreshImage.Parent:=ImageToolBar;
+ //Clicking on the disc name in the status bar lets it be changed
+ ImageDetails.OnMouseUp:=@ImageDetailsMouseUp;
+ //Language menu (the caption is the same in every language)
+ menuitem:=TMenuItem.Create(Main_Menu);
+ menuitem.Caption:='Language/Idioma';
+ Main_Menu.Items.Add(menuitem);
+ menuLangEN:=TMenuItem.Create(menuitem);
+ menuLangEN.Caption:='English';
+ menuLangEN.RadioItem:=True;
+ menuLangEN.GroupIndex:=77;
+ menuLangEN.OnClick:=@LanguageClick;
+ menuitem.Add(menuLangEN);
+ menuLangCA:=TMenuItem.Create(menuitem);
+ menuLangCA.Caption:='Català';
+ menuLangCA.RadioItem:=True;
+ menuLangCA.GroupIndex:=77;
+ menuLangCA.OnClick:=@LanguageClick;
+ menuitem.Add(menuLangCA);
+ menuLangEN.Checked:=Language='en';
+ menuLangCA.Checked:=Language='ca';
+ //Translate each window the first time it is used
+ TranslatedForms:=TList.Create;
+ Screen.OnActiveFormChange:=@ActiveFormChanged;
 {$ENDIF}
  //Reset the changed variable
  HasChanged:=False;
@@ -5037,9 +5139,9 @@ begin
   //Map type
   ImageDetailForm.lbMap.Caption      :=Image.MapTypeString;
   if Image.MajorFormatNumber<>diDOSPlus then
-   ImageDetailForm.MapLabel.Caption:='Map Type'
+   ImageDetailForm.MapLabel.Caption:=_T('Map Type')
   else
-   ImageDetailForm.MapLabel.Caption:='FAT Type';
+   ImageDetailForm.MapLabel.Caption:=_T('FAT Type');
   ImageDetailForm.MapPanel.Visible   :=ImageDetailForm.lbMap.Caption<>'';
   //Directory type
   ImageDetailForm.lbDirType.Caption  :=Image.DirectoryTypeString;
@@ -5115,9 +5217,9 @@ begin
   end;
   //Should we label the top box?
   if Image.DoubleSided then
-   ImageDetailForm.pnSide0Caption.Caption:='  Side 0 Details'
+   ImageDetailForm.pnSide0Caption.Caption:=_T('  Side 0 Details')
   else
-   ImageDetailForm.pnSide0Caption.Caption:='  Side Details';
+   ImageDetailForm.pnSide0Caption.Caption:=_T('  Side Details');
   //How many sides
   numsides:=Length(Image.FreeSpaceMap);
   //Show the Free Space Map graphic
@@ -5195,7 +5297,7 @@ begin
     FSMlabel[side].AutoSize:=False;
     //And fill in the details
     FSMlabel[side].Font.Style:=[fsBold];
-    FSMlabel[side].Caption:='Free Space Map';
+    FSMlabel[side].Caption:=_T('Free Space Map');
     if Image.DoubleSided then
      FSMlabel[side].Caption:=FSMlabel[side].Caption+' Side '+IntToStr(side*2);
     //Disc Title
@@ -5231,13 +5333,13 @@ begin
    begin
     partstr:='ADFS Partition';
     FSMlabel[0].Caption:=FSMlabel[0].Caption+' '+partstr;
-    ImageDetailForm.pnSide0Caption.Caption:='  '+partstr+' Details';
+    ImageDetailForm.pnSide0Caption.Caption:=_T('  '+partstr+' Details');
     //AFS
     if Image.AFSPresent then partstr:='Acorn FS Partition';
     //DOS
     if Image.DOSPresent then partstr:='DOS Partition';
     FSMlabel[1].Caption:=FSMlabel[1].Caption+' '+partstr;
-    ImageDetailForm.pnSide1Caption.Caption:='  '+partstr+' Details';
+    ImageDetailForm.pnSide1Caption.Caption:=_T('  '+partstr+' Details');
    end;
    //Change the dialogue box width
    ImageDetailForm.ClientWidth:=(Length(Image.FreeSpaceMap)*204)
@@ -5631,7 +5733,7 @@ begin
  if Image.MajorFormatNumber=diAcornADFS then
  begin
   //Set up the form
-  AFSPartitionForm.Caption                   :='Add a new partition';
+  AFSPartitionForm.Caption                   :=_T('Add a new partition');
   AFSPartitionForm.PartitionSize.Visible     :=True;
   AFSPartitionForm.PartitionSizeLabel.Visible:=True;
   AFSPartitionForm.rad_typeAFS.Visible       :=True;
@@ -5681,7 +5783,7 @@ begin
  if Image.MajorFormatNumber=diAcornDFS then
  begin
   //Set up the form
-  AFSPartitionForm.Caption                   :='Add a new or existing side';
+  AFSPartitionForm.Caption                   :=_T('Add a new or existing side');
   AFSPartitionForm.PartitionSize.Visible     :=False;
   AFSPartitionForm.PartitionSizeLabel.Visible:=False;
   AFSPartitionForm.rad_typeAFS.Visible       :=False;
@@ -7155,6 +7257,14 @@ begin
     //index is only a reliable indicator of a success, so we need the file's
     //new reference
     ref:=0;
+    //DOS may have had to give it a different name (e.g. 8.3 only), so find
+    //the name it actually has from the index returned
+    if(Image.MajorFormatNumber=diDOSPlus)and(copymode)
+    and(not Image.FileExists(GetFilePath(Dst)+Image.DirSep+newfn,ref))then
+     if(TMyTreeNode(Dst).DirRef>=0)and(TMyTreeNode(Dst).DirRef<Length(Image.Disc))then
+      if index<Length(Image.Disc[TMyTreeNode(Dst).DirRef].Entries)then
+       newfn:=Image.Disc[TMyTreeNode(Dst).DirRef].Entries[index].Filename;
+    ref:=0;
     if(Image.FileExists(GetFilePath(Dst)+Image.DirSep+newfn,ref))
     or(Image.MajorFormatNumber=diAcornUEF)
     or(Image.MajorFormatNumber=diAcornRFS)then
@@ -7734,7 +7844,7 @@ begin
        if HexDump[j].Caption=filepath then
        begin
         //We can just hide the window, and change the title.
-        HexDump[j].Caption:='Deleted';
+        HexDump[j].Caption:=_T('Deleted');
         //When the image is closed, it'll get freed up anyway.
         HexDump[j].Hide;
        end;
@@ -8334,6 +8444,8 @@ procedure TMainForm.ReportError(error: String);
 begin
  //Remove the top bit, if present
  RemoveTopBit(error);
+ //Show it in the chosen language
+ error:=_T(error);
 {$IFNDEF DIMCONSOLE}
  if Fguiopen then
  begin
@@ -8354,9 +8466,14 @@ end;
 //Ask the user for confirmation
 {------------------------------------------------------------------------------}
 function TMainForm.AskConfirm(confim: String; Buttons: array of String): TModalResult;
+var
+ i: Integer=0;
 begin
  Result:=mrOK; //Default
  WriteToDebug('MainForm.AskConfirm('+confim+',array of String)');
+ //Show it in the chosen language
+ confim:=_T(confim);
+ for i:=0 to Length(Buttons)-1 do Buttons[i]:=_T(Buttons[i]);
  if ErrorReporting then
   if Fstyling=RISCOSStyle then
   begin
@@ -8366,20 +8483,20 @@ begin
   else
   begin
    if Length(Buttons)=1 then
-    Result:=QuestionDlg('Confirmation',
+    Result:=QuestionDlg(_T('Confirmation'),
                         confim,
                         mtConfirmation,
                         [mrOK,Buttons[0]],
                         0);
    if Length(Buttons)=2 then
-    Result:=QuestionDlg('Confirmation',
+    Result:=QuestionDlg(_T('Confirmation'),
                         confim,
                         mtConfirmation,
                         [mrOK,Buttons[0],
                          mrCancel,Buttons[1]],
                         0);
    if Length(Buttons)=3 then
-    Result:=QuestionDlg('Confirmation',
+    Result:=QuestionDlg(_T('Confirmation'),
                         confim,
                         mtConfirmation,
                         [mrOK,Buttons[0],
@@ -8387,7 +8504,7 @@ begin
                          mrIgnore,Buttons[2]],
                         0);
    if Length(Buttons)=4 then
-    Result:=QuestionDlg('Confirmation',
+    Result:=QuestionDlg(_T('Confirmation'),
                         confim,
                         mtConfirmation,
                         [mrOK,Buttons[0],
@@ -8403,6 +8520,8 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.ShowInfo(info: String);
 begin
+ //Show it in the chosen language
+ info:=_T(info);
  if ErrorReporting then
   if ParamCount>0 then //If we are in command line mode, then do not use the GUI
    WriteLn(info)
@@ -8419,6 +8538,8 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.UpdateProgress(Fupdate: String);
 begin
+ //Show it in the chosen language
+ Fupdate:=_T(Fupdate);
  WriteToDebug('MainForm.UpdateProgress('+Fupdate+')');
 {$IFNDEF DIMCONSOLE}
  if Fguiopen then

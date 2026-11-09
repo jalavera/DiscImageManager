@@ -1926,8 +1926,16 @@ begin
   side:=1  //ADFS/DOS Hybrid
  else
   side:=0; //DOS only partition
- //Update the local copy, truncating to the maximum length
- FPartitions[side].Name:=LeftStr(title,11);
+ //Update the local copy, truncating to the maximum length (DOS volume labels
+ //are in capitals)
+ FPartitions[side].Name:=UpperCase(LeftStr(title,11));
+ //A label is also kept as an entry in the root (which is what DOS's VOL and
+ //DIR show), so add one if there was none
+ if(not FDOSVolInRoot)and(FPartitions[side].Name<>'')then
+ begin
+  FDOSVolInRoot:=True;
+  FDOSVolEntry:=-1; //At the end of the root
+ end;
  //Update the root
  if FDOSVolInRoot then UpdateDOSDirectory(dosrootname);
  //Is there a volume title in the header?

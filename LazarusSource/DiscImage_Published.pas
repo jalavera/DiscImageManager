@@ -1327,6 +1327,10 @@ begin
      d:=FDisc[dir].Entries[entry].DirRef; //Get the directory reference
      //Work out the new parent path for the files
      newparent:=directory+FPartitions[0].DirSep+newfilename;
+     //DOS may have given it a different name (e.g. 8.3 only), and the new
+     //directory is the last one in the list, so use the name it actually has
+     if GetMajorFormatNumber=diDOSPlus then
+      newparent:=directory+FPartitions[0].DirSep+FDisc[Length(FDisc)-1].Directory;
      //Copy the files
      if Length(FDisc[d].Entries)>0 then
       for e:=0 to Length(FDisc[d].Entries)-1 do

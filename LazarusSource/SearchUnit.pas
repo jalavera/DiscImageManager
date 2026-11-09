@@ -60,7 +60,7 @@ implementation
 
 {$R *.lfm}
 
-uses MainUnit;
+uses MainUnit,DIMLang;
 
 {------------------------------------------------------------------------------}
 //Search for files
@@ -99,7 +99,7 @@ begin
    lb_searchresults.Items.Add(line);
   end;
  //And report how many results
- searchresultscount.Caption:='Number of results found: '+IntToStr(lb_searchresults.Count);
+ searchresultscount.Caption:=_T('Number of results found: ')+IntToStr(lb_searchresults.Count);
 end;
 
 {------------------------------------------------------------------------------}
@@ -175,7 +175,7 @@ procedure TSearchForm.ResetSearchFields;
 begin
  lb_searchresults.Clear;
  ed_filenamesearch.Text:='';
- searchresultscount.Caption:='Number of results found: '+IntToStr(lb_searchresults.Count);
+ searchresultscount.Caption:=_T('Number of results found: ')+IntToStr(lb_searchresults.Count);
 end;
 
 end.
