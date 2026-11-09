@@ -28,6 +28,7 @@ jobs:
             [ "$name" = hdd_86boxmac.img ] && arg=defrag
             [ "$name" = macfloppy.img ] && arg=defrag
             [ "$name" = untitled30m.img ] && arg=defrag
+            [ "$name" = badlfn.img ] && arg=defrag
             timeout 300 ./build/dimtest "build/$name" $arg > "build/$name.log" 2>&1 || status=1
             grep -v 'progress:' "build/$name.log" | head -400
           done
@@ -64,6 +65,7 @@ jobs:
             [ "$name" = hdd_86boxmac.img ] && arg=defrag
             [ "$name" = macfloppy.img ] && arg=defrag
             [ "$name" = untitled30m.img ] && arg=defrag
+            [ "$name" = badlfn.img ] && arg=defrag
             timeout 600 ./build/dimtest.exe "build/$name" $arg > "build/$name.log" 2>&1 || status=1
             grep -v 'progress:' "build/$name.log" | head -400
           done
