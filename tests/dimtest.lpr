@@ -324,6 +324,35 @@ begin
  Img.Free;
 end;
 
+{Long filenames with a path in them must not be used, and must be gone once
+ the directories are written back}
+function RepairTest(filename: String): Boolean;
+var
+ Img, Check: TDiscImage;
+ d, e, bad : Integer;
+ rep       : Boolean;
+begin
+ Result:=True;
+ Img:=TDiscImage.Create;
+ Img.LoadFromFile(filename);
+ Img.ProgressIndicator:=nil;
+ rep:=Img.RepairDOSNames;
+ bad:=0;
+ for d:=0 to Length(Img.Disc)-1 do
+  for e:=0 to Length(Img.Disc[d].Entries)-1 do
+   if(Pos('\',Img.Disc[d].Entries[e].Filename)>0)
+   or(Pos(':',Img.Disc[d].Entries[e].Filename)>0)then inc(bad);
+ Check:=TDiscImage.Create(Img);
+ if(bad>0)or(Check.RepairDOSNames)then
+ begin
+  WriteLn('Repair: FAIL - ',bad,' names with a path left');
+  Result:=False;
+ end
+ else WriteLn('Repair: OK (repaired ',rep,')');
+ Check.Free;
+ Img.Free;
+end;
+
 {Creates directories inside new directories, copies and moves them, and
  checks that all of it is there after reading the image back in, and that it
  can still be defragged}
@@ -459,6 +488,7 @@ begin
      if not SortTest(ParamStr(1),4) then ExitCode:=3;
      if not PathNameTest(ParamStr(1),False) then ExitCode:=3;
      if not PathNameTest(ParamStr(1),True) then ExitCode:=3;
+     if not RepairTest(ParamStr(1)) then ExitCode:=3;
     end;
     //Again, on a fresh copy, with short filenames only
     if ParamStr(2)='defrag' then
