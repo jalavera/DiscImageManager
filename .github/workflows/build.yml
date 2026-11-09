@@ -13,6 +13,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Set the version (1.6.build number)
+        shell: bash
+        run: |
+          perl -pi -e "s/ApplicationVersion = '[0-9.]*';/ApplicationVersion = '1.6.${{ github.run_number }}';/" LazarusSource/MainUnit.pas
+          perl -pi -e 's/ProductVersion="[0-9.]*"/ProductVersion="1.6.${{ github.run_number }}"/' LazarusSource/DiscImageManager.lpi
+          grep -n "ApplicationVersion =" LazarusSource/MainUnit.pas
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
@@ -30,6 +36,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Set the version (1.6.build number)
+        shell: bash
+        run: |
+          perl -pi -e "s/ApplicationVersion = '[0-9.]*';/ApplicationVersion = '1.6.${{ github.run_number }}';/" LazarusSource/MainUnit.pas
+          perl -pi -e 's/ProductVersion="[0-9.]*"/ProductVersion="1.6.${{ github.run_number }}"/' LazarusSource/DiscImageManager.lpi
+          grep -n "ApplicationVersion =" LazarusSource/MainUnit.pas
       - name: Install Lazarus (32 bit)
         shell: pwsh
         run: |
@@ -52,6 +64,12 @@ jobs:
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v5
+      - name: Set the version (1.6.build number)
+        shell: bash
+        run: |
+          perl -pi -e "s/ApplicationVersion = '[0-9.]*';/ApplicationVersion = '1.6.${{ github.run_number }}';/" LazarusSource/MainUnit.pas
+          perl -pi -e 's/ProductVersion="[0-9.]*"/ProductVersion="1.6.${{ github.run_number }}"/' LazarusSource/DiscImageManager.lpi
+          grep -n "ApplicationVersion =" LazarusSource/MainUnit.pas
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
@@ -82,7 +100,7 @@ jobs:
             <key>CFBundleIdentifier</key><string>GJHSoftware.RetroComputing.DiscImageManager</string>
             <key>CFBundleIconFile</key><string>Icon</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.50.6</string>
+            <key>CFBundleShortVersionString</key><string>1.6.${{ github.run_number }}</string>
             <key>NSHighResolutionCapable</key><true/>
             <key>CFBundleDocumentTypes</key><array><dict>
               <key>CFBundleTypeName</key><string>Disc Image</string>
