@@ -197,6 +197,95 @@ begin
  Img.Free;
 end;
 
+{Creates directories inside new directories, copies and moves them, and
+ checks that all of it is there after reading the image back in, and that it
+ can still be defragged}
+function NestTest(filename: String): Boolean;
+var
+ Img, Check: TDiscImage;
+ A, B      : TStringList;
+ r         : Integer;
+ ok        : Boolean;
+ attr,n,p  : String;
+ entry     : TDirEntry;
+ buffer    : TDIByteArray;
+ procedure Step(what: String;res: Integer);
+ begin
+  if res<0 then
+  begin
+   WriteLn('Nest: FAIL ',what,' (',res,')');
+   ok:=False;
+  end;
+ end;
+ procedure AddFile(parent,name: String);
+ var
+  i: Integer;
+ begin
+  ResetDirEntry(entry);
+  entry.Parent:=parent;
+  entry.Filename:=name;
+  entry.Attributes:='';
+  SetLength(buffer,100);
+  for i:=0 to 99 do buffer[i]:=i;
+  entry.Length:=100;
+  Step('writing '+parent+'\'+name,Img.WriteFile(entry,buffer));
+ end;
+begin
+ ok:=True;
+ Img:=TDiscImage.Create;
+ Img.LoadFromFile(filename);
+ Img.ProgressIndicator:=nil;
+ attr:='D';
+ n:='NEST1'; p:='A:';         Step('creating NEST1',Img.CreateDirectory(n,p,attr));
+ n:='NEST2'; p:='A:\NEST1';   Step('creating NEST2',Img.CreateDirectory(n,p,attr));
+ n:='NEST3'; p:='A:\NEST1\NEST2'; Step('creating NEST3',Img.CreateDirectory(n,p,attr));
+ AddFile('A:\NEST1\NEST2\NEST3','DEEP.TXT');
+ AddFile('A:\NEST1\NEST2','MID.TXT');
+ AddFile('A:\NEST1','TOP.TXT');
+ //Copy a directory with a directory in it up to the root
+ Step('copying NEST2 to the root',Img.CopyFile('A:\NEST1\NEST2','A:'));
+ //Move a directory up one level
+ Step('moving NEST3 to NEST1',Img.MoveFile('A:\NEST1\NEST2\NEST3','A:\NEST1'));
+ //Read it back in and compare
+ A:=TStringList.Create; B:=TStringList.Create;
+ A.Text:=Listing(Img);
+ Check:=TDiscImage.Create(Img);
+ B.Text:=Listing(Check);
+ A.Sort; B.Sort;
+ if A.Text<>B.Text then
+ begin
+  WriteLn('Nest: FAIL - the image read back in is different');
+  for r:=0 to A.Count-1 do if B.IndexOf(A[r])<0 then WriteLn('  missing: ',A[r]);
+  for r:=0 to B.Count-1 do if A.IndexOf(B[r])<0 then WriteLn('  extra  : ',B[r]);
+  ok:=False;
+ end
+ else WriteLn('Nest: OK, ',B.Count,' entries');
+ for r:=0 to B.Count-1 do if Pos('NEST',B[r])>0 then WriteLn('  ',B[r]);
+ //Refresh Image (read again from memory) must give the same
+ if Img.ReloadFromData then
+ begin
+  A.Text:=Listing(Img);
+  A.Sort;
+  if A.Text<>B.Text then
+  begin
+   WriteLn('Nest: FAIL - refreshing the image gives something different');
+   ok:=False;
+  end
+  else WriteLn('Nest: refresh OK');
+ end
+ else
+ begin
+  WriteLn('Nest: FAIL - could not refresh the image');
+  ok:=False;
+ end;
+ A.Free; B.Free;
+ //And it can still be defragged
+ if not DefragTest(Check,False) then ok:=False;
+ Check.Free;
+ Img.Free;
+ Result:=ok;
+end;
+
 var
  Image   : TDiscImage;
  Progress: TProgress;
@@ -228,6 +317,7 @@ begin
     begin
      if not RenameTest(ParamStr(1),False) then ExitCode:=3;
      if not RenameTest(ParamStr(1),True) then ExitCode:=3;
+     if not NestTest(ParamStr(1)) then ExitCode:=3;
     end;
     //Again, on a fresh copy, with short filenames only
     if ParamStr(2)='defrag' then
