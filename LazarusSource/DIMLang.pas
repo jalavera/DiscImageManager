@@ -32,7 +32,7 @@ procedure TranslateAllForms;
 implementation
 
 const
- Pairs: array[0..380,0..1] of String = (
+ Pairs: array[0..386,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -413,6 +413,12 @@ const
   ('Attr.','Atrib.'),
   ('Size','Mida'),
   ('Modified','Modificat'),
+  ('Change &Attributes...','Canvia els &atributs...'),
+  ('Change Attributes','Canvia els atributs'),
+  ('Read only','Només lectura'),
+  ('Also change everything inside the selected folders','Canvia també tot el que hi ha dins de les carpetes seleccionades'),
+  ('The attributes of system files can not be changed, so that the disc still boots','Els atributs dels fitxers de sistema no es poden canviar, perquè el disc continuï arrencant'),
+  ('System files (shown in red) are left as they are.','Els fitxers de sistema (en vermell) es deixen com estan.'),
   ('Save Side As','Desa la cara com a')
  );
 

@@ -457,6 +457,19 @@ type
   procedure HeaderBoxPaint(Sender: TObject);
   procedure HeaderBoxMouseUp(Sender: TObject; Button: TMouseButton;
    Shift: TShiftState; X, Y: Integer);
+  procedure HeaderBoxMouseDown(Sender: TObject; Button: TMouseButton;
+   Shift: TShiftState; X, Y: Integer);
+  procedure HeaderBoxMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+  function ColLeft(col: Integer): Integer;
+  function ColumnEdgeAt(X: Integer): Integer;
+  procedure SortByColumn(col: Integer);
+  procedure LoadColumns;
+  procedure SaveColumns;
+  procedure DrawColumns(C: TCanvas;Node: TTreeNode;top,bottom: Integer);
+  procedure ChangeAttributesClick(Sender: TObject);
+  procedure SetWindowPlace;
+  function SetEntryAttributes(dir,entry: Integer;const want: array of TCheckBoxState;
+   recurse: Boolean): Integer;
   procedure DirListResized(Sender: TObject);
   function ColumnAt(X: Integer): Integer;
   function EntryCRC(dir,entry: Integer): String;
@@ -524,6 +537,16 @@ type
    //File list columns (Name, Attributes, Size, Modified, CRC32)
    HeaderBox           :TPaintBox;
    ColW                :array[0..4] of Integer;
+   ColOrder            :array[0..4] of Integer; //Order shown (Name is always first)
+   NameAuto            :Boolean; //The Name column fills the space left
+   ColInit             :Boolean;
+   HdrMode             :Integer; //0 nothing, 1 resizing, 2 moving, 3 clicking Name
+   HdrCol              :Integer;
+   HdrStartX           :Integer;
+   HdrStartW           :Integer;
+   HdrMoved            :Boolean;
+   menuChangeAttr,
+   popChangeAttr       :TMenuItem;
    HeaderSortCol       :Integer; //Column the list was last sorted by (-1 none)
    HeaderSortDesc      :Boolean;
    CRCCache            :TStringList;
@@ -2239,6 +2262,11 @@ begin
  ok:=(Image<>nil)and(Image.MajorFormatNumber=diDOSPlus)and(Length(Image.Disc)>0);
  if menuSortFiles<>nil then menuSortFiles.Enabled:=ok;
  if btn_SortFiles<>nil then btn_SortFiles.Enabled:=ok;
+ //Change Attributes needs something other than the root selected
+ ok:=(ok)and(DirList.SelectionCount>0);
+ if ok then ok:=not((DirList.SelectionCount=1)and(DirList.Selections[0].Parent=nil));
+ if menuChangeAttr<>nil then menuChangeAttr.Enabled:=ok;
+ if popChangeAttr<>nil then popChangeAttr.Enabled:=ok;
 end;
 
 {------------------------------------------------------------------------------}
@@ -2284,20 +2312,116 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
+//Where a column starts (columns are shown in the order in ColOrder)
+{------------------------------------------------------------------------------}
+function TMainForm.ColLeft(col: Integer): Integer;
+var
+ p: Integer=0;
+begin
+ Result:=0;
+ for p:=0 to 4 do
+ begin
+  if ColOrder[p]=col then exit;
+  inc(Result,ColW[ColOrder[p]]);
+ end;
+end;
+
+{------------------------------------------------------------------------------}
 //Which column is at this position? (-1 if none)
 {------------------------------------------------------------------------------}
 function TMainForm.ColumnAt(X: Integer): Integer;
 var
- i : Integer=0;
+ p : Integer=0;
  x0: Integer=0;
 begin
  Result:=-1;
  x0:=0;
- for i:=0 to 4 do
+ for p:=0 to 4 do
  begin
-  if(X>=x0)and(X<x0+ColW[i])then exit(i);
-  inc(x0,ColW[i]);
+  if(X>=x0)and(X<x0+ColW[ColOrder[p]])then exit(ColOrder[p]);
+  inc(x0,ColW[ColOrder[p]]);
  end;
+end;
+
+{------------------------------------------------------------------------------}
+//Which column ends at this position (for resizing)? (-1 if none)
+{------------------------------------------------------------------------------}
+function TMainForm.ColumnEdgeAt(X: Integer): Integer;
+var
+ p : Integer=0;
+ x0: Integer=0;
+begin
+ Result:=-1;
+ x0:=0;
+ for p:=0 to 4 do
+ begin
+  inc(x0,ColW[ColOrder[p]]);
+  if Abs(X-x0)<=3 then exit(ColOrder[p]);
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Read the widths and order of the columns from the settings
+{------------------------------------------------------------------------------}
+procedure TMainForm.LoadColumns;
+var
+ L   : TStringList=nil;
+ i   : Integer=0;
+ v   : Integer=0;
+ seen: array[0..4] of Boolean;
+ ok  : Boolean=True;
+begin
+ if DIMReg=nil then exit;
+ L:=TStringList.Create;
+ try
+  //Widths: first whether the Name column fills the space, then the widths
+  L.CommaText:=DIMReg.GetRegValS('ColWidths','');
+  if L.Count=6 then
+  begin
+   NameAuto:=L[0]<>'0';
+   for i:=0 to 4 do
+   begin
+    v:=StrToIntDef(L[i+1],0);
+    if v>=20 then ColW[i]:=v;
+   end;
+  end;
+  //Order
+  L.CommaText:=DIMReg.GetRegValS('ColOrder','');
+  if L.Count=5 then
+  begin
+   for i:=0 to 4 do seen[i]:=False;
+   for i:=0 to 4 do
+   begin
+    v:=StrToIntDef(L[i],-1);
+    if(v<0)or(v>4)then ok:=False else
+    begin
+     if seen[v] then ok:=False;
+     seen[v]:=True;
+    end;
+   end;
+   if(ok)and(StrToIntDef(L[0],-1)=0)then
+    for i:=0 to 4 do ColOrder[i]:=StrToIntDef(L[i],i);
+  end;
+ finally
+  L.Free;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Save the widths and order of the columns
+{------------------------------------------------------------------------------}
+procedure TMainForm.SaveColumns;
+var
+ t: String='';
+ i: Integer=0;
+begin
+ if DIMReg=nil then exit;
+ if NameAuto then t:='1' else t:='0';
+ for i:=0 to 4 do t:=t+','+IntToStr(ColW[i]);
+ DIMReg.SetRegValS('ColWidths',t);
+ t:=IntToStr(ColOrder[0]);
+ for i:=1 to 4 do t:=t+','+IntToStr(ColOrder[i]);
+ DIMReg.SetRegValS('ColOrder',t);
 end;
 
 {------------------------------------------------------------------------------}
@@ -2307,9 +2431,9 @@ procedure TMainForm.HeaderBoxPaint(Sender: TObject);
 const
  Titles: array[0..4] of String=('Name','Attr.','Size','Modified','CRC32');
 var
+ p  : Integer=0;
  i  : Integer=0;
  x0 : Integer=0;
- tw : Integer=0;
  ty : Integer=0;
  cx : Integer=0;
  cy : Integer=0;
@@ -2325,17 +2449,16 @@ begin
   Line(0,HeaderBox.Height-1,HeaderBox.Width,HeaderBox.Height-1);
   Font.Color:=clBtnText;
   x0:=0;
-  for i:=0 to 4 do
+  for p:=0 to 4 do
   begin
+   i:=ColOrder[p];
    t:=_T(Titles[i]);
    ty:=(HeaderBox.Height-TextHeight(t))div 2;
    Brush.Style:=bsClear;
-   if i=2 then //Size is right aligned, like the numbers
-   begin
-    tw:=TextWidth(t);
-    TextOut(x0+ColW[i]-tw-6,ty,t);
-   end
-   else TextOut(x0+4,ty,t);
+   //Size is right aligned, like the numbers
+   if i=2 then TextRect(Rect(x0,0,x0+ColW[i]-2,HeaderBox.Height),
+                        x0+ColW[i]-TextWidth(t)-6,ty,t)
+   else TextRect(Rect(x0,0,x0+ColW[i]-2,HeaderBox.Height),x0+4,ty,t);
    //Sort direction
    if i=HeaderSortCol then
    begin
@@ -2353,31 +2476,408 @@ begin
    inc(x0,ColW[i]);
    //Separator
    Pen.Color:=clBtnShadow;
-   if i<4 then Line(x0-1,3,x0-1,HeaderBox.Height-4);
+   Line(x0-1,3,x0-1,HeaderBox.Height-4);
   end;
  end;
 end;
 
 {------------------------------------------------------------------------------}
-//Click on a column heading: sort by it, ascending, then descending
+//Sort by a column (Name, Size or Modified): ascending, then descending
 {------------------------------------------------------------------------------}
-procedure TMainForm.HeaderBoxMouseUp(Sender: TObject; Button: TMouseButton;
- Shift: TShiftState; X, Y: Integer);
+procedure TMainForm.SortByColumn(col: Integer);
 var
- col : Integer=0;
  desc: Boolean=False;
 begin
- if Button<>mbLeft then exit;
  if Image.MajorFormatNumber<>diDOSPlus then exit;
- col:=ColumnAt(X);
  //Attributes and CRC32 can not be sorted by
- if not(col in [0,2,3]) then exit;
+ if not((col=0)or(col=2)or(col=3)) then exit;
  if col=HeaderSortCol then desc:=not HeaderSortDesc else desc:=False;
  case col of
   0: DoSortFiles(0+Ord(desc),True);
   2: DoSortFiles(4+Ord(desc),True);
   3: DoSortFiles(2+Ord(desc),True);
  end;
+end;
+
+{------------------------------------------------------------------------------}
+//Mouse down on the headings: start resizing (on an edge) or moving a column
+{------------------------------------------------------------------------------}
+procedure TMainForm.HeaderBoxMouseDown(Sender: TObject; Button: TMouseButton;
+ Shift: TShiftState; X, Y: Integer);
+var
+ col: Integer=0;
+begin
+ HdrMode:=0;
+ if Button<>mbLeft then exit;
+ HdrStartX:=X;
+ HdrMoved:=False;
+ col:=ColumnEdgeAt(X);
+ if col>=0 then
+ begin
+  HdrMode:=1;
+  HdrCol:=col;
+  HdrStartW:=ColW[col];
+  exit;
+ end;
+ col:=ColumnAt(X);
+ if col<0 then exit;
+ HdrCol:=col;
+ if col=0 then HdrMode:=3 else HdrMode:=2;
+end;
+
+{------------------------------------------------------------------------------}
+//Mouse moving over the headings
+{------------------------------------------------------------------------------}
+procedure TMainForm.HeaderBoxMouseMove(Sender: TObject; Shift: TShiftState;
+ X, Y: Integer);
+var
+ w: Integer=0;
+begin
+ case HdrMode of
+  0: if ColumnEdgeAt(X)>=0 then HeaderBox.Cursor:=crHSplit
+     else HeaderBox.Cursor:=crDefault;
+  1: begin //Resizing
+      w:=HdrStartW+(X-HdrStartX);
+      if w<30 then w:=30;
+      if HdrCol=0 then NameAuto:=False;
+      ColW[HdrCol]:=w;
+      HeaderBox.Invalidate;
+      DirList.Invalidate;
+     end;
+  2,3: if Abs(X-HdrStartX)>8 then
+       begin
+        HdrMoved:=True;
+        if HdrMode=2 then HeaderBox.Cursor:=crDrag;
+       end;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Mouse up on the headings: finish resizing, move a column, or sort
+{------------------------------------------------------------------------------}
+procedure TMainForm.HeaderBoxMouseUp(Sender: TObject; Button: TMouseButton;
+ Shift: TShiftState; X, Y: Integer);
+var
+ target: Integer=0;
+ p     : Integer=0;
+ pf    : Integer=0;
+ pt    : Integer=0;
+ tmp   : Integer=0;
+begin
+ if Button<>mbLeft then exit;
+ HeaderBox.Cursor:=crDefault;
+ case HdrMode of
+  1: SaveColumns;
+  2: if HdrMoved then
+     begin //Move the column to where it was dropped (Name always stays first)
+      target:=ColumnAt(X);
+      if(target>0)and(target<>HdrCol)then
+      begin
+       pf:=0; pt:=0;
+       for p:=0 to 4 do
+       begin
+        if ColOrder[p]=HdrCol then pf:=p;
+        if ColOrder[p]=target then pt:=p;
+       end;
+       tmp:=ColOrder[pf];
+       if pf<pt then
+        for p:=pf to pt-1 do ColOrder[p]:=ColOrder[p+1]
+       else
+        for p:=pf downto pt+1 do ColOrder[p]:=ColOrder[p-1];
+       ColOrder[pt]:=tmp;
+       SaveColumns;
+       HeaderBox.Invalidate;
+       DirList.Invalidate;
+      end;
+     end
+     else SortByColumn(HdrCol);
+  3: if not HdrMoved then SortByColumn(0);
+ end;
+ HdrMode:=0;
+end;
+
+{------------------------------------------------------------------------------}
+//Draw the columns for one entry in the file list
+{------------------------------------------------------------------------------}
+procedure TMainForm.DrawColumns(C: TCanvas;Node: TTreeNode;top,bottom: Integer);
+const
+ Letters = 'HSRA';
+var
+ cd     : Integer=0;
+ ce     : Integer=0;
+ p      : Integer=0;
+ col    : Integer=0;
+ i      : Integer=0;
+ cx     : Integer=0;
+ ct     : String='';
+ pinned : Boolean=False;
+ normal : TColor=$404040;
+begin
+ cd:=TMyTreeNode(Node.Parent).DirRef;
+ ce:=Node.Index;
+ if(cd<0)or(cd>=Length(Image.Disc))then exit;
+ if(ce<0)or(ce>=Length(Image.Disc[cd].Entries))then exit;
+ pinned:=Image.IsDOSSystemEntry(cd,ce);
+ if pinned then normal:=$000080;
+ C.Brush.Style:=bsClear;
+ C.Font.Style:=[];
+ for p:=1 to 4 do
+ begin
+  col:=ColOrder[p];
+  cx:=ColLeft(col);
+  C.Font.Color:=normal;
+  case col of
+   1: begin //Attributes: DOS as HSRA, with H and S in red on system files
+       ct:=Image.Disc[cd].Entries[ce].Attributes;
+       if Image.MajorFormatNumber=diDOSPlus then
+       begin
+        inc(cx,4);
+        for i:=1 to 4 do
+        begin
+         if cx+C.TextWidth('W')>ColLeft(col)+ColW[col] then break;
+         if Pos(Letters[i],ct)>0 then
+         begin
+          if(pinned)and(i<=2)then C.Font.Color:=clRed else C.Font.Color:=normal;
+          C.TextOut(cx,top,Letters[i]);
+         end
+         else
+         begin
+          C.Font.Color:=normal;
+          C.TextOut(cx,top,'-');
+         end;
+         inc(cx,C.TextWidth('W'));
+        end;
+       end
+       else C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),cx+4,top,ct);
+      end;
+   2: if Image.Disc[cd].Entries[ce].DirRef=-1 then //Size (not for directories)
+      begin
+       ct:=IntToStr(Image.Disc[cd].Entries[ce].Length);
+       C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),
+                  cx+ColW[col]-C.TextWidth(ct)-6,top,ct);
+      end;
+   3: if Image.Disc[cd].Entries[ce].TimeStamp>0 then //Date modified
+      begin
+       ct:=FormatDateTime('dd/mm/yyyy hh:nn',Image.Disc[cd].Entries[ce].TimeStamp);
+       C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),cx+4,top,ct);
+      end;
+   4: begin //CRC32
+       ct:=EntryCRC(cd,ce);
+       C.TextRect(Rect(cx,top,cx+ColW[col]-2,bottom),cx+4,top,ct);
+      end;
+  end;
+ end;
+ C.Font.Style:=[fsBold];
+end;
+
+{------------------------------------------------------------------------------}
+//Set (or clear) DOS attributes on an entry, and optionally everything inside
+//it. want: R, H, S, A - ticked to set, unticked to clear, grey to leave.
+//System files are left alone. Returns how many were changed.
+{------------------------------------------------------------------------------}
+function TMainForm.SetEntryAttributes(dir,entry: Integer;
+ const want: array of TCheckBoxState;recurse: Boolean): Integer;
+const
+ Flags = 'RHSA';
+var
+ cur  : String='';
+ att  : String='';
+ path : String='';
+ i    : Integer=0;
+ d    : Integer=0;
+begin
+ Result:=0;
+ if(dir<0)or(dir>=Length(Image.Disc))then exit;
+ if(entry<0)or(entry>=Length(Image.Disc[dir].Entries))then exit;
+ if Image.IsDOSSystemEntry(dir,entry) then exit;
+ cur:=Image.Disc[dir].Entries[entry].Attributes;
+ att:='';
+ for i:=1 to 4 do
+  case want[i-1] of
+   cbChecked: att:=att+Flags[i];
+   cbGrayed : if Pos(Flags[i],cur)>0 then att:=att+Flags[i];
+  end;
+ if Image.Disc[dir].Entries[entry].DirRef>=0 then att:=att+'D';
+ path:=Image.GetParent(dir)+Image.DirSep(Image.Disc[dir].Partition)
+      +Image.Disc[dir].Entries[entry].Filename;
+ //Only write it if something changes
+ for i:=1 to 4 do
+  if(Pos(Flags[i],cur)>0)<>(Pos(Flags[i],att)>0)then
+  begin
+   if Image.UpdateAttributes(path,att,entry) then inc(Result);
+   break;
+  end;
+ //And everything inside it
+ if(recurse)and(Image.Disc[dir].Entries[entry].DirRef>=0)then
+ begin
+  d:=Image.Disc[dir].Entries[entry].DirRef;
+  if(d>=0)and(d<Length(Image.Disc))then
+  begin
+   if not Image.Disc[d].BeenRead then Image.ReadDirectory(path);
+   for i:=0 to Length(Image.Disc[d].Entries)-1 do
+    inc(Result,SetEntryAttributes(d,i,want,True));
+  end;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Change the attributes of the selected files and directories (DOS)
+{------------------------------------------------------------------------------}
+procedure TMainForm.ChangeAttributesClick(Sender: TObject);
+const
+ Flags = 'RHSA';
+ Names: array[0..3] of String=('Read only','Hidden','System','Archive');
+var
+ F      : TForm=nil;
+ cb     : array[0..3] of TCheckBox;
+ cbSub  : TCheckBox=nil;
+ lb     : TLabel=nil;
+ bOK,
+ bCancel: TButton;
+ want   : array[0..3] of TCheckBoxState;
+ Nodes  : array of TTreeNode=nil;
+ i      : Integer=0;
+ j      : Integer=0;
+ n      : Integer=0;
+ cnt    : array[0..3] of Integer;
+ total  : Integer=0;
+ skipped: Integer=0;
+ anydir : Boolean=False;
+ d      : Integer=0;
+ e      : Integer=0;
+begin
+ if Image.MajorFormatNumber<>diDOSPlus then exit;
+ //What is selected (leaving out the root and the system files)
+ for i:=0 to 3 do cnt[i]:=0;
+ for i:=0 to DirList.SelectionCount-1 do
+  if DirList.Selections[i].Parent<>nil then
+  begin
+   d:=TMyTreeNode(DirList.Selections[i].Parent).DirRef;
+   e:=DirList.Selections[i].Index;
+   if(d<0)or(d>=Length(Image.Disc))then continue;
+   if(e<0)or(e>=Length(Image.Disc[d].Entries))then continue;
+   if Image.IsDOSSystemEntry(d,e) then begin inc(skipped); continue; end;
+   SetLength(Nodes,Length(Nodes)+1);
+   Nodes[Length(Nodes)-1]:=DirList.Selections[i];
+   if Image.Disc[d].Entries[e].DirRef>=0 then anydir:=True;
+   for j:=1 to 4 do
+    if Pos(Flags[j],Image.Disc[d].Entries[e].Attributes)>0 then inc(cnt[j-1]);
+  end;
+ if Length(Nodes)=0 then
+ begin
+  if skipped>0 then
+   ShowInfo('The attributes of system files can not be changed, so that the disc still boots');
+  exit;
+ end;
+ //Build the window
+ F:=TForm.CreateNew(Self);
+ try
+  F.Caption:=_T('Change Attributes');
+  F.BorderStyle:=bsDialog;
+  F.Position:=poMainFormCenter;
+  F.ClientWidth:=360;
+  n:=12;
+  for i:=0 to 3 do
+  begin
+   cb[i]:=TCheckBox.Create(F);
+   cb[i].Parent:=F;
+   cb[i].Left:=16;
+   cb[i].Top:=n;
+   cb[i].Caption:=_T(Names[i])+' ('+Flags[i+1]+')';
+   cb[i].AllowGrayed:=True;
+   if cnt[i]=0 then cb[i].State:=cbUnchecked
+   else if cnt[i]=Length(Nodes) then cb[i].State:=cbChecked
+   else cb[i].State:=cbGrayed;
+   inc(n,26);
+  end;
+  if anydir then
+  begin
+   cbSub:=TCheckBox.Create(F);
+   cbSub.Parent:=F;
+   cbSub.Left:=16;
+   cbSub.Top:=n+4;
+   cbSub.Caption:=_T('Also change everything inside the selected folders');
+   inc(n,34);
+  end;
+  if skipped>0 then
+  begin
+   lb:=TLabel.Create(F);
+   lb.Parent:=F;
+   lb.Left:=16;
+   lb.Top:=n+2;
+   lb.Font.Color:=clMaroon;
+   lb.Caption:=_T('System files (shown in red) are left as they are.');
+   inc(n,26);
+  end;
+  bOK:=TButton.Create(F);
+  bOK.Parent:=F;
+  bOK.Caption:=_T('OK');
+  bOK.ModalResult:=mrOK;
+  bOK.Default:=True;
+  bOK.SetBounds(F.ClientWidth-180,n+8,80,28);
+  bCancel:=TButton.Create(F);
+  bCancel.Parent:=F;
+  bCancel.Caption:=_T('Cancel');
+  bCancel.ModalResult:=mrCancel;
+  bCancel.Cancel:=True;
+  bCancel.SetBounds(F.ClientWidth-92,n+8,80,28);
+  F.ClientHeight:=n+48;
+  if F.ShowModal<>mrOK then exit;
+  for i:=0 to 3 do want[i]:=cb[i].State;
+  //Apply to each one
+  total:=0;
+  for i:=0 to Length(Nodes)-1 do
+   total:=total+SetEntryAttributes(TMyTreeNode(Nodes[i].Parent).DirRef,
+                                   Nodes[i].Index,want,
+                                   (cbSub<>nil)and(cbSub.Checked));
+  if total>0 then
+  begin
+   HasChanged:=True;
+   CRCCache.Clear;
+   DirList.Invalidate;
+   DirListChange(DirList,DirList.Selected);
+   UpdateImageInfo;
+  end;
+ finally
+  F.Free;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Put the window where it was last time (or make it wide enough for the
+//columns), making sure it is on the screen
+{------------------------------------------------------------------------------}
+procedure TMainForm.SetWindowPlace;
+var
+ l: Integer=0;
+ t: Integer=0;
+ w: Integer=0;
+ h: Integer=0;
+begin
+ w:=1040;
+ h:=620;
+ l:=Screen.WorkAreaLeft+(Screen.WorkAreaWidth-w)div 2;
+ t:=Screen.WorkAreaTop+(Screen.WorkAreaHeight-h)div 2;
+ if DIMReg<>nil then
+ begin
+  w:=Integer(DIMReg.GetRegValI('WinWidth',Cardinal(w)));
+  h:=Integer(DIMReg.GetRegValI('WinHeight',Cardinal(h)));
+  l:=Integer(DIMReg.GetRegValI('WinLeft',Cardinal(l+100000)))-100000;
+  t:=Integer(DIMReg.GetRegValI('WinTop',Cardinal(t+100000)))-100000;
+ end;
+ if w>Screen.WorkAreaWidth then w:=Screen.WorkAreaWidth;
+ if h>Screen.WorkAreaHeight then h:=Screen.WorkAreaHeight;
+ if w<600 then w:=600;
+ if h<400 then h:=400;
+ if l+w>Screen.WorkAreaLeft+Screen.WorkAreaWidth then
+  l:=Screen.WorkAreaLeft+Screen.WorkAreaWidth-w;
+ if t+h>Screen.WorkAreaTop+Screen.WorkAreaHeight then
+  t:=Screen.WorkAreaTop+Screen.WorkAreaHeight-h;
+ if l<Screen.WorkAreaLeft then l:=Screen.WorkAreaLeft;
+ if t<Screen.WorkAreaTop then t:=Screen.WorkAreaTop;
+ SetBounds(l,t,w,h);
+ if DIMReg<>nil then
+  if DIMReg.GetRegValB('WinMaximised',False) then WindowState:=wsMaximized;
 end;
 
 {------------------------------------------------------------------------------}
@@ -3822,9 +4322,9 @@ begin
   Application.QueueAsyncCall(@OpenStartupFile,0);
  end;
  Scaling;
- //Initial width and height of form
- Width:=751;
- Height:=515;
+ //Size and position of the window: as it was last time, or a size that leaves
+ //room for the columns
+ SetWindowPlace;
  //Enable or disable buttons
  DisableControls;
  //Reset the file details panel
@@ -3889,6 +4389,8 @@ begin
  if menuRefreshImage<>nil then menuRefreshImage.Enabled:=False;
  if menuSortFiles<>nil then menuSortFiles.Enabled:=False;
  if btn_SortFiles<>nil then btn_SortFiles.Enabled:=False;
+ if menuChangeAttr<>nil then menuChangeAttr.Enabled:=False;
+ if popChangeAttr<>nil then popChangeAttr.Enabled:=False;
  btn_ImageDetails.Enabled :=False;
  btn_About.Enabled        :=True;
  btn_download.Enabled     :=False;
@@ -4235,6 +4737,22 @@ begin
  HeaderBox.Font.Size:=8;
  HeaderBox.OnPaint:=@HeaderBoxPaint;
  HeaderBox.OnMouseUp:=@HeaderBoxMouseUp;
+ HeaderBox.OnMouseDown:=@HeaderBoxMouseDown;
+ HeaderBox.OnMouseMove:=@HeaderBoxMouseMove;
+ ColOrder[0]:=0; ColOrder[1]:=1; ColOrder[2]:=2; ColOrder[3]:=3; ColOrder[4]:=4;
+ NameAuto:=True;
+ ColInit:=False;
+ //Change Attributes: in the Files menu and the right click menu
+ menuChangeAttr:=TMenuItem.Create(FilesMenu);
+ menuChangeAttr.Caption:=_T('Change &Attributes...');
+ menuChangeAttr.OnClick:=@ChangeAttributesClick;
+ menuChangeAttr.Enabled:=False;
+ FilesMenu.Add(menuChangeAttr);
+ popChangeAttr:=TMenuItem.Create(File_Menu);
+ popChangeAttr.Caption:=_T('Change &Attributes...');
+ popChangeAttr.OnClick:=@ChangeAttributesClick;
+ popChangeAttr.Enabled:=False;
+ File_Menu.Items.Add(popChangeAttr);
  ImageContentsPanel.OnResize:=@DirListResized;
  //Clicking on the disc name in the status bar lets it be changed
  ImageDetails.OnMouseUp:=@ImageDetailsMouseUp;
@@ -5410,6 +5928,15 @@ end;
 procedure TMainForm.FormClose(Sender: TObject; var CloseAction: TCloseAction);
 begin
  WriteToDebug('Application Closed');
+ //Remember the size and position of the window for next time
+ if DIMReg<>nil then
+ begin
+  DIMReg.SetRegValB('WinMaximised',WindowState=wsMaximized);
+  DIMReg.SetRegValI('WinLeft'  ,Cardinal(RestoredLeft+100000));
+  DIMReg.SetRegValI('WinTop'   ,Cardinal(RestoredTop+100000));
+  DIMReg.SetRegValI('WinWidth' ,Cardinal(RestoredWidth));
+  DIMReg.SetRegValI('WinHeight',Cardinal(RestoredHeight));
+ end;
 end;
 
 {------------------------------------------------------------------------------}
@@ -6945,16 +7472,25 @@ begin
   Sender.Canvas.Font.Style:=[];
   cw:=Sender.Canvas.TextWidth('0');
   if cw<5 then cw:=7;
-  nw:=DirList.ClientWidth-(cw*4+12)-(cw*9+14)-(cw*16+12)-(cw*8+12);
-  if nw<120 then nw:=120;
-  if(ColW[0]<>nw)or(ColW[1]<>cw*4+12)then
+  if not ColInit then
   begin
-   ColW[0]:=nw;
    ColW[1]:=cw*4+12;
    ColW[2]:=cw*9+14;
    ColW[3]:=cw*16+12;
    ColW[4]:=cw*8+12;
-   if HeaderBox<>nil then HeaderBox.Invalidate;
+   NameAuto:=True;
+   LoadColumns; //Any the user has set
+   ColInit:=True;
+  end;
+  if NameAuto then
+  begin
+   nw:=DirList.ClientWidth-ColW[1]-ColW[2]-ColW[3]-ColW[4];
+   if nw<120 then nw:=120;
+   if ColW[0]<>nw then
+   begin
+    ColW[0]:=nw;
+    if HeaderBox<>nil then HeaderBox.Invalidate;
+   end;
   end;
   Sender.Canvas.Font.Style:=[fsBold];
  end;
@@ -6988,11 +7524,6 @@ procedure TMainForm.DirListCustomDrawItem(Sender: TCustomTreeView;
  Node: TTreeNode; State: TCustomDrawState; var DefaultDraw: Boolean);
 var
  NodeRect : TRect;
- cd       : Integer=0;
- ce       : Integer=0;
- cx       : Integer=0;
- ct       : String='';
- cs       : String='';
  indent   : Integer=0;
  arrowin  : Integer=0;
  arrowsize: Integer=0;
@@ -7087,50 +7618,7 @@ begin
      TextOut(NodeRect.Left,NodeRect.Top,Node.Text);
     //The columns: attributes, size, date modified and CRC32
     if(TV=DirList)and(Node.Parent<>nil)and(Image<>nil)then
-    begin
-     cd:=TMyTreeNode(Node.Parent).DirRef;
-     ce:=Node.Index;
-     if(cd>=0)and(cd<Length(Image.Disc))then
-      if ce<Length(Image.Disc[cd].Entries)then
-      begin
-       Brush.Style:=bsClear;
-       Font.Style:=[];
-       Font.Color:=$404040;
-       if Image.IsDOSSystemEntry(cd,ce) then Font.Color:=$000080;
-       cx:=ColW[0];
-       //Attributes
-       ct:=Image.Disc[cd].Entries[ce].Attributes;
-       if Image.MajorFormatNumber=diDOSPlus then
-       begin
-        cs:='';
-        if Pos('H',ct)>0 then cs:=cs+'H' else cs:=cs+'-';
-        if Pos('S',ct)>0 then cs:=cs+'S' else cs:=cs+'-';
-        if Pos('R',ct)>0 then cs:=cs+'R' else cs:=cs+'-';
-        if Pos('A',ct)>0 then cs:=cs+'A' else cs:=cs+'-';
-        ct:=cs;
-       end;
-       TextRect(Rect(cx,NodeRect.Top,cx+ColW[1]-2,NodeRect.Bottom),cx+4,NodeRect.Top,ct);
-       inc(cx,ColW[1]);
-       //Size (not for directories)
-       if Image.Disc[cd].Entries[ce].DirRef=-1 then
-       begin
-        ct:=IntToStr(Image.Disc[cd].Entries[ce].Length);
-        TextOut(cx+ColW[2]-TextWidth(ct)-6,NodeRect.Top,ct);
-       end;
-       inc(cx,ColW[2]);
-       //Date modified
-       if Image.Disc[cd].Entries[ce].TimeStamp>0 then
-       begin
-        ct:=FormatDateTime('dd/mm/yyyy hh:nn',Image.Disc[cd].Entries[ce].TimeStamp);
-        TextRect(Rect(cx,NodeRect.Top,cx+ColW[3]-2,NodeRect.Bottom),cx+4,NodeRect.Top,ct);
-       end;
-       inc(cx,ColW[3]);
-       //CRC32
-       ct:=EntryCRC(cd,ce);
-       TextOut(cx+4,NodeRect.Top,ct);
-       Font.Style:=[fsBold];
-      end;
-    end;
+     DrawColumns(TV.Canvas,Node,NodeRect.Top,NodeRect.Bottom);
    end;
 //  end;
  end;
@@ -8157,6 +8645,18 @@ begin
  if not DoNotUpdate then
  begin
   WriteToDebug('MainForm.AttributeChangeClick');
+  //DOS system files (IO.SYS, MSDOS.SYS...) are not changed
+  if DirList.SelectionCount=1 then
+   if DirList.Selected.Parent<>nil then
+    if Image.IsDOSSystemEntry(TMyTreeNode(DirList.Selected.Parent).DirRef,
+                              DirList.Selected.Index) then
+    begin
+     DoNotUpdate:=True;
+     TCheckbox(Sender).Checked:=not TCheckbox(Sender).Checked;
+     DoNotUpdate:=False;
+     ShowInfo('The attributes of system files can not be changed, so that the disc still boots');
+     exit;
+    end;
   //Determine if this is on an AFS or DOS partition
   if DirList.SelectionCount=1 then //Assuming only one item selected
   begin
