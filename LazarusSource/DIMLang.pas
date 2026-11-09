@@ -32,7 +32,7 @@ procedure TranslateAllForms;
 implementation
 
 const
- Pairs: array[0..364,0..1] of String = (
+ Pairs: array[0..376,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -397,6 +397,18 @@ const
   ('Rename Directory','Canvia el nom del directori'),
   ('Rename File ','Canvia el nom del fitxer'),
   ('Rename Files','Canvia el nom dels fitxers'),
+  ('&Sort Files','&Ordena els fitxers'),
+  ('Sort Files','Ordena els fitxers'),
+  ('By name (A to Z)','Per nom (de la A a la Z)'),
+  ('By name (Z to A)','Per nom (de la Z a la A)'),
+  ('By date (oldest first)','Per data (els més antics primer)'),
+  ('By date (newest first)','Per data (els més nous primer)'),
+  ('By size (smallest first)','Per mida (els més petits primer)'),
+  ('By size (largest first)','Per mida (els més grans primer)'),
+  ('Sort When Defragging','Ordena en desfragmentar'),
+  ('Do not sort','No ordenis'),
+  ('Sorting files','Ordenant els fitxers'),
+  ('Nothing to sort: the files are already in that order','No cal ordenar: els fitxers ja estan en aquest ordre'),
   ('Save Side As','Desa la cara com a')
  );
 

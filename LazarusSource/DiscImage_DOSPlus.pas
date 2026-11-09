@@ -220,6 +220,111 @@ begin
 end;
 
 {-------------------------------------------------------------------------------
+Sort the entries of every directory (how: 0=name, 1=date, 2=size). Directories
+come before files. In the root, the system files (IO.SYS, MSDOS.SYS, IBMBIO.COM,
+IBMDOS.COM, and anything with the System attribute) are kept first, in the
+order they were, so that bootable discs still boot. The volume label stays
+where it was. Only the directory entries move: no file data, nor the FAT, are
+touched. Returns True if anything was changed.
+-------------------------------------------------------------------------------}
+function TDiscImage.SortDOSDirectories(how: Byte;descending: Boolean): Boolean;
+var
+ d      : Integer=0;
+ e      : Integer=0;
+ r      : Integer=0;
+ j      : Integer=0;
+ tmp    : TDirEntry;
+ isroot : Boolean=False;
+ changed: array of Boolean=nil;
+ function Pinned(const A: TDirEntry): Boolean;
+ var
+  n: String='';
+ begin
+  Result:=False;
+  if not isroot then exit;
+  n:=UpperCase(A.ShortFilename);
+  if n='' then n:=UpperCase(A.Filename);
+  Result:=(n='IO.SYS')or(n='MSDOS.SYS')or(n='IBMBIO.COM')or(n='IBMDOS.COM')
+        or(n='DRBIOS.SYS')or(n='DRBDOS.SYS')
+        or(Pos('S',UpperCase(A.Attributes))>0);
+ end;
+ //Should A go before B?
+ function Before(const A,B: TDirEntry): Boolean;
+ var
+  c     : Integer=0;
+  pa,pb,
+  da,db : Boolean;
+ begin
+  pa:=Pinned(A);
+  pb:=Pinned(B);
+  if pa<>pb then exit(pa);
+  if pa then exit(False); //System files keep their order
+  da:=A.DirRef>=0;
+  db:=B.DirRef>=0;
+  if da<>db then exit(da); //Directories first
+  c:=0;
+  case how of
+   1: if A.TimeStamp<B.TimeStamp then c:=-1
+      else if A.TimeStamp>B.TimeStamp then c:=1;
+   2: if not da then
+       if A.Length<B.Length then c:=-1
+       else if A.Length>B.Length then c:=1;
+  end;
+  if c=0 then c:=CompareText(A.Filename,B.Filename);
+  if descending then c:=-c;
+  Result:=c<0;
+ end;
+begin
+ Result:=False;
+ if GetMajorFormatNumber<>diDOSPlus then exit;
+ //Make sure every directory has been read in
+ d:=0;
+ while d<Length(FDisc) do
+ begin
+  if Length(FDisc[d].Entries)>0 then
+   for e:=0 to Length(FDisc[d].Entries)-1 do
+   begin
+    r:=FDisc[d].Entries[e].DirRef;
+    if(r>=0)and(r<Length(FDisc))then
+     if not FDisc[r].BeenRead then
+      ReadDirectory(GetParent(d)+DirSep(0)+FDisc[d].Entries[e].Filename);
+   end;
+  inc(d);
+ end;
+ //Sort each one (a stable insertion sort, so equal entries keep their order)
+ SetLength(changed,Length(FDisc));
+ for d:=0 to Length(FDisc)-1 do
+ begin
+  changed[d]:=False;
+  if FDisc[d].Deleted then continue;
+  isroot:=FDisc[d].Parent=-1;
+  if Length(FDisc[d].Entries)>1 then
+   for e:=1 to Length(FDisc[d].Entries)-1 do
+   begin
+    tmp:=FDisc[d].Entries[e];
+    j:=e-1;
+    while(j>=0)and(Before(tmp,FDisc[d].Entries[j]))do
+    begin
+     FDisc[d].Entries[j+1]:=FDisc[d].Entries[j];
+     dec(j);
+    end;
+    if j+1<>e then
+    begin
+     FDisc[d].Entries[j+1]:=tmp;
+     changed[d]:=True;
+    end;
+   end;
+ end;
+ //Write back the directories that have changed
+ for d:=0 to Length(FDisc)-1 do
+  if changed[d] then
+  begin
+   UpdateDOSDirectory(GetParent(d));
+   Result:=True;
+  end;
+end;
+
+{-------------------------------------------------------------------------------
 Number of DOS partitions found in the MBR (0 if the image is not partitioned)
 -------------------------------------------------------------------------------}
 function TDiscImage.DOSPartitionCount: Integer;

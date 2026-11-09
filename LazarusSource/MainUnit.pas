@@ -338,6 +338,7 @@ type
   //Events - Form
   procedure FormCloseQuery(Sender: TObject; var CanClose: boolean);
   procedure FormDropFiles(Sender: TObject; const FileNames: array of String);
+  procedure OpenStartupFile(Data: PtrInt);
   procedure FormShow(Sender: TObject);
   procedure FormCreate(Sender: TObject);
   procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -415,6 +416,8 @@ type
   procedure DownLoadFile(dir,entry: Integer; path: String;filename: String='');
 {$IFNDEF DIMCONSOLE}
   procedure ExtractFiles(ShowDialogue: Boolean);
+  function RootFolderName(Node: TTreeNode): String;
+  function DownLoadRoot(Node: TTreeNode;path: String;folder: String=''): String;
   function FindNode(filename: String;casesens:Boolean=True): TTreeNode;
   function FindPartitionRoot(filepath: String): Integer;
   function GetCopyMode(Shift: TShiftState): Boolean;
@@ -449,6 +452,11 @@ type
   procedure ImageDetailsMouseUp(Sender: TObject; Button: TMouseButton;
    Shift: TShiftState; X, Y: Integer);
   function AddRefreshIcon: Integer;
+  function AddSortIcon: Integer;
+  procedure SortFilesClick(Sender: TObject);
+  procedure SortButtonClick(Sender: TObject);
+  procedure DefragSortClick(Sender: TObject);
+  procedure UpdateSortControls;
 {$ENDIF}
   procedure ParseCommand(var Command: TStringArray);
 {$IFNDEF DIMCONSOLE}
@@ -501,6 +509,14 @@ type
    menuLangEN,
    menuLangCA          :TMenuItem;
    TranslatedForms     :TList;
+   menuSortFiles,
+   menuDefragSort      :TMenuItem;
+   SortPopup           :TPopupMenu;
+   btn_SortFiles       :TToolButton;
+   DefragSort          :Integer; //-1 = do not sort when defragging, else 0..5
+   StartupChecked      :Boolean;
+   LastDropName        :String;
+   LastDropTime        :QWord;
    //To keep track of if we are dragging and if the mouse button is down
    IsDragging,
    MouseIsDown         :Boolean;
@@ -707,6 +723,16 @@ uses
   CustomDialogueUnit,ErrorLogUnit,SettingsUnit,ImportSelectorUnit,
   PWordEditorUnit,AFSPartitionUnit,ChangeInterleaveUnit,CSVPrefUnit,
   ImageReportUnit,FileDragOut,{$ENDIF}ConsoleAppUnit,DIMLang;
+
+const
+ //Sort Files orders (the Tag of each menu item is the index)
+ SortCaptions: array[0..5] of String=(
+  'By name (A to Z)',
+  'By name (Z to A)',
+  'By date (oldest first)',
+  'By date (newest first)',
+  'By size (smallest first)',
+  'By size (largest first)');
 
 {$IFNDEF DIMCONSOLE}
 {-------------------------------------------------------------------------------
@@ -1616,6 +1642,23 @@ begin
  SaveImage.Title:='Extract File(s)/Directory(s)';
  selectroot:=False;
  showsave:=not ShowDialogue; //Indicates whether the dialogue has been shown
+ //A whole disc (or side) is selected: extract everything on it, into a folder
+ //named after it
+ for s:=0 to DirList.SelectionCount-1 do
+  if DirList.Selections[s].Parent=nil then
+   Insert(DirList.Selections[s],Roots,Length(Roots));
+ if Length(Roots)>0 then
+ begin
+  for s:=0 to Length(Roots)-1 do
+  begin
+   SaveImage.FileName:=RootFolderName(Roots[s]);
+   if ShowDialogue then
+    if not SaveImage.Execute then exit;
+   DownLoadRoot(Roots[s],ExtractFilePath(SaveImage.FileName),
+                         ExtractFileName(SaveImage.FileName));
+  end;
+  exit;
+ end;
  if DirList.SelectionCount>0 then
  begin
   SetLength(Nodes,0);
@@ -1726,6 +1769,71 @@ begin
  end;
 end;
 {$ENDIF}
+
+{------------------------------------------------------------------------------}
+//Open an image passed on the command line (for example, when an image is
+//dropped on the program's icon in Windows, or opened with it)
+{------------------------------------------------------------------------------}
+procedure TMainForm.OpenStartupFile(Data: PtrInt);
+var
+ i: Integer=0;
+ p: String='';
+begin
+ for i:=1 to ParamCount do
+ begin
+  p:=ParamStr(i);
+  if p<>'' then
+   if(p[1]<>'-')and(FileExists(p))and(not DirectoryExists(p))then
+   begin
+    FormDropFiles(Self,[p]);
+    exit;
+   end;
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//A name for the folder that a whole disc (root) is extracted into
+{------------------------------------------------------------------------------}
+function TMainForm.RootFolderName(Node: TTreeNode): String;
+var
+ i: Integer=0;
+begin
+ Result:='';
+ if Node<>nil then
+  for i:=1 to Length(Node.Text) do
+   if not(Node.Text[i] in [':','\','/','$','*','?','"','<','>','|'])then
+    Result:=Result+Node.Text[i];
+ Result:=Trim(Result);
+ if(Result='')and(Node<>nil)and(TMyTreeNode(Node).DirRef>=0)
+ and(TMyTreeNode(Node).DirRef<Length(Image.Disc))then
+  Result:=Trim(Image.Title(Image.Disc[TMyTreeNode(Node).DirRef].Partition));
+ if Result='' then Result:='Disc';
+end;
+
+{------------------------------------------------------------------------------}
+//Extract a whole disc (everything under a root), recursively, into a folder
+//called 'folder' (or named after the root) inside 'path'. Returns the folder.
+{------------------------------------------------------------------------------}
+function TMainForm.DownLoadRoot(Node: TTreeNode;path: String;folder: String=''): String;
+var
+ d: Integer=0;
+ c: Integer=0;
+begin
+ Result:='';
+ if Node=nil then exit;
+ d:=TMyTreeNode(Node).DirRef;
+ if(d<0)or(d>=Length(Image.Disc))then exit;
+ if folder='' then folder:=RootFolderName(Node);
+ if Length(path)>0 then
+  if path[Length(path)]<>PathDelim then path:=path+PathDelim;
+ Result:=path+folder;
+ if not DirectoryExists(Result) then ForceDirectories(Result);
+ Image.CreateRootInf(Result,Image.Disc[d].Partition);
+ //Make sure the root has been read in
+ if not TMyTreeNode(Node).BeenRead then ReadInDirectory(Node);
+ for c:=0 to Length(Image.Disc[d].Entries)-1 do
+  DownLoadFile(d,c,Result);
+end;
 
 {------------------------------------------------------------------------------}
 //Create an Image filename
@@ -2105,6 +2213,107 @@ begin
  end
  else //Anything else has its own window, which deals with all the sides
   if btn_ImageDetails.Enabled then btn_ImageDetailsClick(Sender);
+end;
+
+{------------------------------------------------------------------------------}
+//Sort Files is only for DOS images
+{------------------------------------------------------------------------------}
+procedure TMainForm.UpdateSortControls;
+var
+ ok: Boolean=False;
+begin
+ ok:=(Image<>nil)and(Image.MajorFormatNumber=diDOSPlus)and(Length(Image.Disc)>0);
+ if menuSortFiles<>nil then menuSortFiles.Enabled:=ok;
+ if btn_SortFiles<>nil then btn_SortFiles.Enabled:=ok;
+end;
+
+{------------------------------------------------------------------------------}
+//Sort the files in every directory (Tag: 0/1 name, 2/3 date, 4/5 size; odd is
+//descending)
+{------------------------------------------------------------------------------}
+procedure TMainForm.SortFilesClick(Sender: TObject);
+var
+ code: Integer=0;
+begin
+ if not(Sender is TMenuItem) then exit;
+ code:=TMenuItem(Sender).Tag;
+ if(code<0)or(code>5)then exit;
+ if Image.MajorFormatNumber<>diDOSPlus then exit;
+ ProgressForm.Show;
+ UpdateProgress('Sorting files');
+ Application.ProcessMessages;
+ if Image.SortDOSDirectories(code div 2,Odd(code)) then
+ begin
+  HasChanged:=True;
+  ShowNewImage(Image.Filename);
+  UpdateImageInfo;
+  ProgressForm.Hide;
+ end
+ else
+ begin
+  ProgressForm.Hide;
+  ShowInfo('Nothing to sort: the files are already in that order');
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//The Sort Files button shows the different orders
+{------------------------------------------------------------------------------}
+procedure TMainForm.SortButtonClick(Sender: TObject);
+var
+ pt: TPoint;
+begin
+ if btn_SortFiles=nil then exit;
+ pt:=btn_SortFiles.ClientToScreen(Point(0,btn_SortFiles.Height));
+ SortPopup.PopUp(pt.X,pt.Y);
+end;
+
+{------------------------------------------------------------------------------}
+//The order to sort in when defragging
+{------------------------------------------------------------------------------}
+procedure TMainForm.DefragSortClick(Sender: TObject);
+begin
+ if not(Sender is TMenuItem) then exit;
+ DefragSort:=TMenuItem(Sender).Tag;
+ TMenuItem(Sender).Checked:=True;
+ DIMReg.SetRegValI('DefragSort',Cardinal(DefragSort+1));
+end;
+
+{------------------------------------------------------------------------------}
+//Draw the icon for Sort Files (bars getting shorter, and a down arrow)
+{------------------------------------------------------------------------------}
+function TMainForm.AddSortIcon: Integer;
+var
+ bmp: TBitmap=nil;
+ w  : Integer=0;
+ function S(v: Integer): Integer; //Scale from a 68 pixel design
+ begin
+  Result:=Round(v*w/68);
+ end;
+begin
+ Result:=-1;
+ w:=ToolBarImages.Width;
+ bmp:=TBitmap.Create;
+ try
+  bmp.SetSize(w,ToolBarImages.Height);
+  bmp.Canvas.Brush.Color:=clFuchsia;
+  bmp.Canvas.FillRect(0,0,bmp.Width,bmp.Height);
+  bmp.Canvas.Pen.Style:=psClear;
+  bmp.Canvas.Brush.Color:=$00303030;
+  bmp.Canvas.Rectangle(S(6),S(10),S(40),S(19));
+  bmp.Canvas.Rectangle(S(6),S(26),S(32),S(35));
+  bmp.Canvas.Rectangle(S(6),S(42),S(24),S(51));
+  bmp.Canvas.Rectangle(S(6),S(58),S(16),S(65));
+  bmp.Canvas.Brush.Color:=$00B06020; //A blue
+  bmp.Canvas.Rectangle(S(48),S(6),S(58),S(44));
+  bmp.Canvas.Pen.Style:=psSolid;
+  bmp.Canvas.Pen.Color:=$00B06020;
+  bmp.Canvas.Pen.Width:=1;
+  bmp.Canvas.Polygon([Point(S(38),S(42)),Point(S(68),S(42)),Point(S(53),S(64))]);
+  Result:=ToolBarImages.AddMasked(bmp,clFuchsia);
+ finally
+  bmp.Free;
+ end;
 end;
 
 {------------------------------------------------------------------------------}
@@ -2816,6 +3025,7 @@ begin
  menuAddPartition.Enabled   :=btn_AddPartition.Enabled;
  //Defrag (Compact) button
  btn_defrag.Enabled:=Length(Image.Disc)>0;
+ UpdateSortControls;
  menudefrag.Enabled:=btn_defrag.Enabled;
  //Change Interleave
  btn_ChangeInterleave.Enabled:=(Image.FormatNumber=diAcornADFS<<4+2) //ADFS L
@@ -3442,6 +3652,12 @@ end;
 procedure TMainForm.FormShow(Sender: TObject);
 begin
  Fguiopen:=True;
+ //Open any image given when starting (e.g. dropped on the program's icon)
+ if not StartupChecked then
+ begin
+  StartupChecked:=True;
+  Application.QueueAsyncCall(@OpenStartupFile,0);
+ end;
  Scaling;
  //Initial width and height of form
  Width:=751;
@@ -3508,6 +3724,8 @@ begin
  btn_CloseImage.Enabled   :=False;
  if btn_RefreshImage<>nil then btn_RefreshImage.Enabled:=False;
  if menuRefreshImage<>nil then menuRefreshImage.Enabled:=False;
+ if menuSortFiles<>nil then menuSortFiles.Enabled:=False;
+ if btn_SortFiles<>nil then btn_SortFiles.Enabled:=False;
  btn_ImageDetails.Enabled :=False;
  btn_About.Enabled        :=True;
  btn_download.Enabled     :=False;
@@ -3610,6 +3828,7 @@ begin
 procedure TMainForm.FormCreate(Sender: TObject);
 var
  menuitem: TMenuItem=nil;
+ si      : Integer=0;
  function CreateTickBox(LCaption: String; LParent: TPanel): TRISCOSTickBox;
  begin
   Result:=TRISCOSTickBox.Create(LParent as TComponent);
@@ -3792,6 +4011,52 @@ begin
  btn_RefreshImage.Enabled:=False;
  btn_RefreshImage.Left:=btn_CloseImage.Left+btn_CloseImage.Width;
  btn_RefreshImage.Parent:=ImageToolBar;
+ //Sort Files: in the Files menu, as a button on the Files toolbar (with a
+ //pop up menu), and the order to sort in when defragging, in the Image menu
+ menuSortFiles:=TMenuItem.Create(FilesMenu);
+ menuSortFiles.Caption:=_T('&Sort Files');
+ menuSortFiles.ImageIndex:=AddSortIcon;
+ menuSortFiles.Enabled:=False;
+ FilesMenu.Add(menuSortFiles);
+ SortPopup:=TPopupMenu.Create(Self);
+ for si:=0 to 5 do
+ begin
+  menuitem:=TMenuItem.Create(menuSortFiles);
+  menuitem.Caption:=_T(SortCaptions[si]);
+  menuitem.Tag:=si;
+  menuitem.OnClick:=@SortFilesClick;
+  menuSortFiles.Add(menuitem);
+  menuitem:=TMenuItem.Create(SortPopup);
+  menuitem.Caption:=_T(SortCaptions[si]);
+  menuitem.Tag:=si;
+  menuitem.OnClick:=@SortFilesClick;
+  SortPopup.Items.Add(menuitem);
+ end;
+ btn_SortFiles:=TToolButton.Create(FilesToolBar);
+ btn_SortFiles.Hint:=_T('Sort Files');
+ btn_SortFiles.ImageIndex:=menuSortFiles.ImageIndex;
+ btn_SortFiles.OnClick:=@SortButtonClick;
+ btn_SortFiles.Enabled:=False;
+ btn_SortFiles.Left:=btn_DuplicateFile.Left+btn_DuplicateFile.Width;
+ btn_SortFiles.Parent:=FilesToolBar;
+ DefragSort:=Integer(DIMReg.GetRegValI('DefragSort',0))-1;
+ if(DefragSort<-1)or(DefragSort>5)then DefragSort:=-1;
+ menuDefragSort:=TMenuItem.Create(menuDefrag.Parent);
+ menuDefragSort.Caption:=_T('Sort When Defragging');
+ menuDefragSort.ImageIndex:=menuSortFiles.ImageIndex;
+ menuDefrag.Parent.Insert(menuDefrag.MenuIndex+1,menuDefragSort);
+ for si:=-1 to 5 do
+ begin
+  menuitem:=TMenuItem.Create(menuDefragSort);
+  if si<0 then menuitem.Caption:=_T('Do not sort')
+  else menuitem.Caption:=_T(SortCaptions[si]);
+  menuitem.Tag:=si;
+  menuitem.RadioItem:=True;
+  menuitem.GroupIndex:=78;
+  menuitem.Checked:=si=DefragSort;
+  menuitem.OnClick:=@DefragSortClick;
+  menuDefragSort.Add(menuitem);
+ end;
  //Clicking on the disc name in the status bar lets it be changed
  ImageDetails.OnMouseUp:=@ImageDetailsMouseUp;
  //Language menu (the caption is the same in every language)
@@ -3815,6 +4080,11 @@ begin
  //Translate each window the first time it is used
  TranslatedForms:=TList.Create;
  Screen.OnActiveFormChange:=@ActiveFormChanged;
+ //Files dropped on the application's icon (macOS sends these to the
+ //application rather than to a window)
+ {$IFDEF Darwin}
+ Application.OnDropFiles:=@FormDropFiles;
+ {$ENDIF}
 {$ENDIF}
  //Reset the changed variable
  HasChanged:=False;
@@ -4035,6 +4305,13 @@ var
  ListOfFile: array of String=nil;
 begin
  WriteToDebug('MainForm.FormDropFiles');
+ //The same files can arrive twice, via the application and via the window
+ if Length(FileNames)>0 then
+ begin
+  if(FileNames[0]=LastDropName)and(GetTickCount64-LastDropTime<2000)then exit;
+  LastDropName:=FileNames[0];
+  LastDropTime:=GetTickCount64;
+ end;
  //Create a new DiscImage instance
  NewImage:=TDiscImage.Create;
  NewImage.InterleaveMethod    :=ADFSInterleave;
@@ -4164,6 +4441,7 @@ begin
  //Free up the DiscImage instance
  NewImage.Free;
  ProgressForm.Hide;
+ LastDropTime:=GetTickCount64;
 end;
 
 {------------------------------------------------------------------------------}
@@ -5606,6 +5884,13 @@ begin
     {$IFNDEF DIMCONSOLE}if Fguiopen then ShowNewImage(Image.Filename);{$ENDIF}
     HasChanged:=True;
    end;
+  //Sort the files first, if asked to, so they go back in that order
+  if(DefragSort>=0)and(Image.MajorFormatNumber=diDOSPlus)then
+   if Image.SortDOSDirectories(DefragSort div 2,Odd(DefragSort)) then
+   begin
+    {$IFNDEF DIMCONSOLE}if Fguiopen then ShowNewImage(Image.Filename);{$ENDIF}
+    HasChanged:=True;
+   end;
   //Create a new image, with the same shape as the original
   oldscan:=Image.ScanSubDirs;
   olddos :=Image.OpenDOSPartitions;
@@ -6747,6 +7032,19 @@ begin
  begin
   //Remember the node being dragged
   DraggedItem:=DirList.GetNodeAt(X,Y);
+  //A whole disc (root) can be dragged out to the Finder/Explorer, to extract
+  //everything on it
+  if DraggedItem<>nil then
+   if(DraggedItem.Parent=nil)
+   and((TargetOS='Darwin')or(TargetOS='Win32')or(TargetOS='Win64'))then
+   begin
+    SetLength(DragNodes,1);
+    DragNodes[0]:=DraggedItem;
+    MouseIsDown:=True;
+    CursorPos.X:=X;
+    CursorPos.Y:=Y;
+    exit;
+   end;
   //Does the file exist?
   if DraggedItem<>nil then
    if Image.FileExists(GetFilePath(DraggedItem),dir,entry) then
@@ -6873,6 +7171,17 @@ begin
  path:=DragOutFolder;
  SetLength(Paths,0);
  for i:=0 to Length(Items)-1 do
+  if Items[i].Parent=nil then //A whole disc
+  begin
+   fname:=DownLoadRoot(Items[i],path);
+   if(fname<>'')and(DirectoryExists(fname))
+   and(not AnsiMatchText(fname,Paths))then
+   begin
+    SetLength(Paths,Length(Paths)+1);
+    Paths[Length(Paths)-1]:=fname;
+   end;
+  end
+  else
   if Image.FileExists(GetFilePath(Items[i]),dir,entry) then
    if(dir<>$FFFF)and(entry<>$FFFF)then
    begin
@@ -7213,6 +7522,9 @@ var
  NewNode: TTreeNode=nil;
 begin
  WriteToDebug('MainForm.DoCopyMove');
+ //A whole disc can only be dragged out of the window, not within it
+ if DraggedItem<>nil then
+  if DraggedItem.Parent=nil then exit;
  //Are we dragging something, over something and is not the same as the source?
  if (DraggedItem<>nil)AND(Dst<>nil)
  AND((DraggedItem<>Dst)
@@ -8523,7 +8835,7 @@ begin
  //Show it in the chosen language
  info:=_T(info);
  if ErrorReporting then
-  if ParamCount>0 then //If we are in command line mode, then do not use the GUI
+  if not Fguiopen then //If we are in command line mode, then do not use the GUI
    WriteLn(info)
   else //Otherwise, display a nice window on the screen
    if Fstyling=RISCOSStyle then

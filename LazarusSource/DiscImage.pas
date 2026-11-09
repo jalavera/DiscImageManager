@@ -1167,6 +1167,7 @@ type
   property DOSUseSFN:           Boolean       read FDOSUseSFN
                                               write FDOSUseSFN;
   function RemoveDOSLongFilenames: Boolean;
+  function SortDOSDirectories(how: Byte;descending: Boolean): Boolean;
   function DOSPartitionCount: Integer;
   function DOSPartitionDescription(index: Integer): String;
   function SelectDOSPartition(index: Integer): Boolean;
