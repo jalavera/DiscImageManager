@@ -27,7 +27,44 @@ jobs:
             # Only these fixtures have a complete FAT, so files can be written back
             [ "$name" = hdd_86boxmac.img ] && arg=defrag
             [ "$name" = macfloppy.img ] && arg=defrag
+            [ "$name" = untitled30m.img ] && arg=defrag
             timeout 300 ./build/dimtest "build/$name" $arg > "build/$name.log" 2>&1 || status=1
+            grep -v 'progress:' "build/$name.log" | head -400
+          done
+          exit $status
+
+  # The same tests with a 32 bit Windows build, as the 32 bit code paths differ
+  test-win32:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Lazarus (32 bit)
+        shell: pwsh
+        run: |
+          choco install lazarus --forcex86 -y --no-progress
+          $fpc = Get-ChildItem -Path 'C:\lazarus\fpc' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*i386-win32*' } | Select-Object -First 1
+          if (-not $fpc) { throw 'fpc.exe not found' }
+          Write-Host "Found $($fpc.FullName)"
+          "FPC=$($fpc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build the test tool
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          & $env:FPC -gl -FuLazarusSource -FEbuild tests/dimtest.lpr
+          if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+      - name: Open the test images
+        shell: bash
+        run: |
+          status=0
+          for f in tests/*.img.spec; do
+            name=$(basename "$f" .spec)
+            python tests/mkimg.py "$f" "build/$name"
+            echo "===== $name ====="
+            arg=""
+            [ "$name" = hdd_86boxmac.img ] && arg=defrag
+            [ "$name" = macfloppy.img ] && arg=defrag
+            [ "$name" = untitled30m.img ] && arg=defrag
+            timeout 600 ./build/dimtest.exe "build/$name" $arg > "build/$name.log" 2>&1 || status=1
             grep -v 'progress:' "build/$name.log" | head -400
           done
           exit $status
