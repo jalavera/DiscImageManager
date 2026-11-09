@@ -267,6 +267,63 @@ begin
  Img.Free;
 end;
 
+{Copies and moves a whole directory around (as the GUI does when one is
+ dragged), with and without 8.3 names only, and checks that no entry ends up
+ with a path in its name}
+function PathNameTest(filename: String;SFN: Boolean): Boolean;
+var
+ Img, Check: TDiscImage;
+ d, e, n   : Integer;
+ src       : String;
+ procedure Step(what: String;res: Integer);
+ begin
+  WriteLn('PathName: ',what,' = ',res);
+ end;
+ function BadNames(I: TDiscImage): Integer;
+ var
+  dd, ee: Integer;
+ begin
+  Result:=0;
+  for dd:=0 to Length(I.Disc)-1 do
+   if not I.Disc[dd].Deleted then
+    for ee:=0 to Length(I.Disc[dd].Entries)-1 do
+     if(Pos('\',I.Disc[dd].Entries[ee].Filename)>0)
+     or(Pos(':',I.Disc[dd].Entries[ee].Filename)>0)then
+     begin
+      if Result<5 then
+       WriteLn('PathName: FAIL - ',I.GetParent(dd),' has "',
+               I.Disc[dd].Entries[ee].Filename,'"');
+      inc(Result);
+     end;
+ end;
+begin
+ Result:=True;
+ Img:=TDiscImage.Create;
+ Img.DOSUseSFN:=SFN;
+ Img.LoadFromFile(filename);
+ Img.ProgressIndicator:=nil;
+ //Find a directory with files in it, below the root
+ src:='';
+ for d:=0 to Length(Img.Disc)-1 do
+  if(src='')and(Img.Disc[d].Parent>0)and(Length(Img.Disc[d].Entries)>2)then
+   src:=Img.GetParent(d);
+ if src='' then begin Img.Free; exit; end;
+ WriteLn('PathName (8.3 only ',SFN,'): using ',src);
+ Step('copy to root as COPYDIRX',Img.CopyFile(src,'A:','COPYDIRX'));
+ Step('copy COPYDIRX into the source',Img.CopyFile('A:\COPYDIRX',src));
+ Step('copy to root as LONGCOPYNAME',Img.CopyFile(src,'A:','LONGCOPYNAME'));
+ Step('move COPYDIRX into the last directory',
+      Img.MoveFile('A:\COPYDIRX',Img.GetParent(Length(Img.Disc)-1)));
+ n:=BadNames(Img);
+ Img.SortDOSDirectories(0,False);
+ n:=n+BadNames(Img);
+ Check:=TDiscImage.Create(Img);
+ n:=n+BadNames(Check);
+ if n>0 then Result:=False else WriteLn('PathName (8.3 only ',SFN,'): OK');
+ Check.Free;
+ Img.Free;
+end;
+
 {Creates directories inside new directories, copies and moves them, and
  checks that all of it is there after reading the image back in, and that it
  can still be defragged}
@@ -400,6 +457,8 @@ begin
      if not NestTest(ParamStr(1)) then ExitCode:=3;
      if not SortTest(ParamStr(1),1) then ExitCode:=3;
      if not SortTest(ParamStr(1),4) then ExitCode:=3;
+     if not PathNameTest(ParamStr(1),False) then ExitCode:=3;
+     if not PathNameTest(ParamStr(1),True) then ExitCode:=3;
     end;
     //Again, on a fresh copy, with short filenames only
     if ParamStr(2)='defrag' then
