@@ -1246,8 +1246,18 @@ end;
 Copies a file from one directory to another
 -------------------------------------------------------------------------------}
 function TDiscImage.CopyFile(filename,directory: String): Integer;
+var
+ newname: String='';
 begin
- Result:=CopyFile(filename,directory,filename);
+ //The new name is just the name, without the path (this is used when copying
+ //the contents of a directory - with the whole path, the copies of any
+ //directories inside could not be found)
+ newname:=filename;
+ if Length(FPartitions)>0 then
+  if FPartitions[0].DirSep<>#0 then
+   while Pos(FPartitions[0].DirSep,newname)>0 do
+    newname:=Copy(newname,Pos(FPartitions[0].DirSep,newname)+1);
+ Result:=CopyFile(filename,directory,newname);
 end;
 function TDiscImage.CopyFile(filename,directory,newfilename: String): Integer;
 var
