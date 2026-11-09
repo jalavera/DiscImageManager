@@ -31,13 +31,8 @@ procedure TranslateAllForms;
 
 implementation
 
-type
- TPair = record
-  en, ca: String;
- end;
-
 const
- Pairs: array[0..364] of TPair = (
+ Pairs: array[0..364,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -424,21 +419,21 @@ begin
  ToEn.Duplicates:=dupIgnore;
  for i:=Low(Pairs) to High(Pairs) do
  begin
-  ToCa.AddObject(Pairs[i].en,TObject(PtrInt(i)));
-  ToEn.AddObject(Pairs[i].ca,TObject(PtrInt(i)));
+  ToCa.AddObject(Pairs[i,0],TObject(PtrInt(i)));
+  ToEn.AddObject(Pairs[i,1],TObject(PtrInt(i)));
  end;
  //Pieces: anything starting or ending with a space or a quote, or that has a
  //quote in it, longest first
  SetLength(Pieces,0);
  for i:=Low(Pairs) to High(Pairs) do
-  if(Length(Pairs[i].en)>=6)
-  and((Pairs[i].en[1] in [' ','"'])or(Pairs[i].en[Length(Pairs[i].en)] in [' ','"'])
-   or(Pos('"',Pairs[i].en)>0))then
+  if(Length(Pairs[i,0])>=6)
+  and((Pairs[i,0][1] in [' ','"'])or(Pairs[i,0][Length(Pairs[i,0])] in [' ','"'])
+   or(Pos('"',Pairs[i,0])>0))then
   begin
    k:=Length(Pieces);
    SetLength(Pieces,k+1);
    j:=k;
-   while(j>0)and(Length(Pairs[Pieces[j-1]].en)<Length(Pairs[i].en))do
+   while(j>0)and(Length(Pairs[Pieces[j-1],0])<Length(Pairs[i,0]))do
    begin
     Pieces[j]:=Pieces[j-1];
     dec(j);
@@ -463,14 +458,14 @@ begin
  begin
   if ToCa.Find(s,i) then
   begin
-   r:=Pairs[PtrInt(ToCa.Objects[i])].ca;
+   r:=Pairs[PtrInt(ToCa.Objects[i]),1];
    Result:=True;
   end;
  end
  else
   if ToEn.Find(s,i) then
   begin
-   r:=Pairs[PtrInt(ToEn.Objects[i])].en;
+   r:=Pairs[PtrInt(ToEn.Objects[i]),0];
    Result:=True;
   end;
 end;
@@ -484,8 +479,8 @@ begin
  if Exact(s,Result) then exit;
  //Not a whole match: translate any known pieces of it
  for i:=0 to Length(Pieces)-1 do
-  if Pos(Pairs[Pieces[i]].en,Result)>0 then
-   Result:=StringReplace(Result,Pairs[Pieces[i]].en,Pairs[Pieces[i]].ca,[rfReplaceAll]);
+  if Pos(Pairs[Pieces[i],0],Result)>0 then
+   Result:=StringReplace(Result,Pairs[Pieces[i],0],Pairs[Pieces[i],1],[rfReplaceAll]);
 end;
 
 {$IFNDEF DIMCONSOLE}
