@@ -397,6 +397,7 @@ type
   TProgressProc = procedure(Fupdate: String) of Object;
  private
   FDisc         : TDisc;        //Container for the entire catalogue
+  FDOSBootSector: String;       //The DOS boot sector (to see which files it loads)
   FPartitions   : TPartitions;  //Partition details
   Fdata         : TDIByteArray; //Container for the image to be loaded into
   {$IFDEF CPU64}
@@ -438,7 +439,6 @@ type
   Fdosroot,                     //Root address of the DOS Plus root partition
   afshead,                      //Address of the AFS header
   afshead2,                     //Address of the AFS header copy
-  FDOSBootSector: String;       //The DOS boot sector (to see which files it loads)
   doshead,                      //Address of the DOS Plus header, if exists
   doshead2,                     //Address of the backup DOS header, if exists (FAT32)
   dosmap,                       //Address of the DOS Plus FAT
