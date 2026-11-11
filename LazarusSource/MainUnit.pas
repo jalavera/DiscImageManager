@@ -2358,23 +2358,23 @@ end;
 {------------------------------------------------------------------------------}
 procedure TMainForm.MakeBackup(filename: String);
 var
- src: TFileStream=nil;
- dst: TFileStream=nil;
+ fsrc: TFileStream=nil;
+ fdst: TFileStream=nil;
 begin
  if not FMakeBackup then exit;
  if LowerCase(ExtractFileExt(filename))='.bak' then exit;
  if not SysUtils.FileExists(filename) then exit;
  try
-  src:=TFileStream.Create(filename,fmOpenRead or fmShareDenyNone);
+  fsrc:=TFileStream.Create(filename,fmOpenRead or fmShareDenyNone);
   try
-   dst:=TFileStream.Create(filename+'.bak',fmCreate);
+   fdst:=TFileStream.Create(filename+'.bak',fmCreate);
    try
-    dst.CopyFrom(src,0);
+    fdst.CopyFrom(fsrc,0);
    finally
-    dst.Free;
+    fdst.Free;
    end;
   finally
-   src.Free;
+   fsrc.Free;
   end;
  except
   on E: Exception do

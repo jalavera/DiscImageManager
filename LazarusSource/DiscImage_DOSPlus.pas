@@ -2394,7 +2394,7 @@ sectors at offset. Standard floppy sizes get the values DOS formats them with.
 Returns False if that FAT type can not be used for that size.
 -------------------------------------------------------------------------------}
 function TDiscImage.WriteFATVolume(offset: QWord;totsec: Cardinal;fat: Byte;
-                                   hidden: Cardinal;spt,heads: Word): Boolean;
+                                   hidden: Cardinal;spt,nheads: Word): Boolean;
 var
  spc     : Cardinal=1;
  rootents: Cardinal=512;
@@ -2435,20 +2435,20 @@ begin
  Result:=False;
  if(fat<>diFAT12)and(fat<>diFAT16)then exit;
  if spt=0 then spt:=63;
- if heads=0 then heads:=16;
+ if nheads=0 then nheads:=16;
  //Standard floppy discs (not in a partition)
  if(fat=diFAT12)and(hidden=0)then
  begin
   fixed:=True;
   case totsec of
-    320: begin spc:=2; rootents:=112; media:=$FF; spt:= 8; heads:=2; end; //160K x2
-    360: begin spc:=1; rootents:= 64; media:=$FC; spt:= 9; heads:=1; end; //180K
-    640: begin spc:=2; rootents:=112; media:=$FF; spt:= 8; heads:=2; end; //320K
-    720: begin spc:=2; rootents:=112; media:=$FD; spt:= 9; heads:=2; end; //360K
-   1440: begin spc:=2; rootents:=112; media:=$F9; spt:= 9; heads:=2; end; //720K
-   2400: begin spc:=1; rootents:=224; media:=$F9; spt:=15; heads:=2; end; //1.2M
-   2880: begin spc:=1; rootents:=224; media:=$F0; spt:=18; heads:=2; end; //1.44M
-   5760: begin spc:=2; rootents:=240; media:=$F0; spt:=36; heads:=2; end; //2.88M
+    320: begin spc:=2; rootents:=112; media:=$FF; spt:= 8; nheads:=2; end; //160K x2
+    360: begin spc:=1; rootents:= 64; media:=$FC; spt:= 9; nheads:=1; end; //180K
+    640: begin spc:=2; rootents:=112; media:=$FF; spt:= 8; nheads:=2; end; //320K
+    720: begin spc:=2; rootents:=112; media:=$FD; spt:= 9; nheads:=2; end; //360K
+   1440: begin spc:=2; rootents:=112; media:=$F9; spt:= 9; nheads:=2; end; //720K
+   2400: begin spc:=1; rootents:=224; media:=$F9; spt:=15; nheads:=2; end; //1.2M
+   2880: begin spc:=1; rootents:=224; media:=$F0; spt:=18; nheads:=2; end; //1.44M
+   5760: begin spc:=2; rootents:=240; media:=$F0; spt:=36; nheads:=2; end; //2.88M
   else fixed:=False;
   end;
  end;
@@ -2492,7 +2492,7 @@ begin
  WriteByte(media,offset+$15);
  Write16b(fatsz,offset+$16);
  Write16b(spt,offset+$18);
- Write16b(heads,offset+$1A);
+ Write16b(nheads,offset+$1A);
  Write32b(hidden,offset+$1C);
  if hidden>0 then WriteByte($80,offset+$24); //Drive number
  WriteByte($29,offset+$26);                  //Extended boot signature
@@ -2540,7 +2540,7 @@ var
  totsec  : Cardinal=0;
  hidden  : Cardinal=0;
  spt     : Word=0;
- heads   : Word=0;
+ nheads   : Word=0;
  cyl     : Cardinal=0;
  lbaend  : Cardinal=0;
  c,h,s   : Cardinal;
@@ -2577,7 +2577,7 @@ begin
  srclen:=Src.GetDataLength;
  ob:=Src.doshead;
  spt  :=Src.Read16b(ob+$18);
- heads:=Src.Read16b(ob+$1A);
+ nheads:=Src.Read16b(ob+$1A);
  //A partition in a hard disc image?
  if Length(Src.FDOSPartList)>0 then
  begin
@@ -2611,10 +2611,10 @@ begin
   hidden:=pstart div 512;
   newlen:=pstart+newsize;
   //The disc image grows to a whole number of cylinders, if it has to grow
-  if(newlen>srclen)and(spt>0)and(heads>0)then
+  if(newlen>srclen)and(spt>0)and(nheads>0)then
   begin
-   cyl:=(newlen+QWord(spt)*heads*512-1)div(QWord(spt)*heads*512);
-   newlen:=QWord(cyl)*spt*heads*512;
+   cyl:=(newlen+QWord(spt)*nheads*512-1)div(QWord(spt)*nheads*512);
+   newlen:=QWord(cyl)*spt*nheads*512;
   end;
   if newlen<srclen then newlen:=srclen;
  end
@@ -2638,14 +2638,14 @@ begin
  begin
   WriteDOSHeader(pstart,newsize,diFAT32,True);
   Write32b(hidden,pstart+$1C);
-  if(spt>0)and(heads>0)then
+  if(spt>0)and(nheads>0)then
   begin
    Write16b(spt,pstart+$18);
-   Write16b(heads,pstart+$1A);
+   Write16b(nheads,pstart+$1A);
   end;
  end
  else
-  if not WriteFATVolume(pstart,totsec,newfat,hidden,spt,heads) then
+  if not WriteFATVolume(pstart,totsec,newfat,hidden,spt,nheads) then
   begin
    if newfat=diFAT12 then
     msg:='FAT12 can not be used for that size (it has to be smaller)'
@@ -2680,16 +2680,16 @@ begin
   end;
   WriteByte(ptype,$1BE+slot*$10+4);
   Write32b(totsec,$1BE+slot*$10+12);
-  if(spt>0)and(heads>0)then
+  if(spt>0)and(nheads>0)then
   begin
    lbaend:=hidden+totsec-1;
-   c:=lbaend div(Cardinal(spt)*heads);
-   h:=(lbaend div spt)mod heads;
+   c:=lbaend div(Cardinal(spt)*nheads);
+   h:=(lbaend div spt)mod nheads;
    s:=(lbaend mod spt)+1;
    if c>1023 then
    begin
     c:=1023;
-    h:=heads-1;
+    h:=nheads-1;
     s:=spt;
    end;
    WriteByte(h,$1BE+slot*$10+5);
