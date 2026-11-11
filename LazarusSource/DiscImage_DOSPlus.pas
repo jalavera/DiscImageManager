@@ -2556,11 +2556,13 @@ begin
   msg:='This is not a DOS image';
   exit;
  end;
+ {$IFDEF CPU64}
  if Src.Streamed then
  begin
   msg:='This image is too big to be changed';
   exit;
  end;
+ {$ENDIF}
  srcfat:=Src.FATType;
  if(newfat=diFAT32)and(newsize<33300*1024)then
  begin
