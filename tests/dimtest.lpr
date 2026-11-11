@@ -386,6 +386,102 @@ begin
  Img.Free;
 end;
 
+{Makes a new volume of a different size and/or FAT type, copies all the
+ files into it (as the GUI does), and checks that everything is there}
+function ResizeTest(filename: String;newsize: QWord;newfat: Byte): Boolean;
+var
+ Old, N, Check: TDiscImage;
+ A, B         : TStringList;
+ d,e,r,i      : Integer;
+ entry        : TDirEntry;
+ buffer       : TDIByteArray;
+ name,par,msg : String;
+ MapFrom,
+ MapTo        : array of String;
+ function Map(path: String): String;
+ var
+  k: Integer;
+ begin
+  Result:=path;
+  for k:=Length(MapFrom)-1 downto 0 do
+   if(Result=MapFrom[k])or(Copy(Result,1,Length(MapFrom[k])+1)=MapFrom[k]+'\')then
+    Result:=MapTo[k]+Copy(Result,Length(MapFrom[k])+1);
+ end;
+begin
+ Result:=True;
+ SetLength(MapFrom,0);
+ SetLength(MapTo,0);
+ Old:=TDiscImage.Create;
+ Old.LoadFromFile(filename);
+ Old.ProgressIndicator:=nil;
+ N:=TDiscImage.Create;
+ N.ProgressIndicator:=nil;
+ if not N.CreateDOSVolumeFrom(Old,newsize,newfat,msg) then
+ begin
+  WriteLn('Resize ',newsize div 1024,'K FAT',IntToHex(newfat,2),': FAIL - ',msg);
+  Old.Free; N.Free;
+  exit(False);
+ end;
+ if msg<>'' then WriteLn('Resize: note - ',msg);
+ for d:=0 to Length(Old.Disc)-1 do
+  for e:=0 to Length(Old.Disc[d].Entries)-1 do
+  begin
+   entry:=Old.Disc[d].Entries[e];
+   par:=Map(Old.GetParent(d));
+   name:=entry.Filename;
+   r:=0;
+   if entry.DirRef>=0 then
+   begin
+    r:=N.CreateDirectory(name,par,entry.Attributes);
+    if r>=0 then
+     if N.Disc[Length(N.Disc)-1].Directory<>entry.Filename then
+     begin
+      i:=Length(MapFrom);
+      SetLength(MapFrom,i+1);
+      SetLength(MapTo,i+1);
+      MapFrom[i]:=Old.GetParent(d)+'\'+entry.Filename;
+      MapTo[i]:=par+'\'+N.Disc[Length(N.Disc)-1].Directory;
+     end;
+   end
+   else
+   begin
+    SetLength(buffer,0);
+    Old.ExtractFile(Old.GetParent(d)+'\'+name,buffer);
+    entry.Parent:=par;
+    r:=N.WriteFile(entry,buffer);
+   end;
+   if r<0 then
+   begin
+    WriteLn('Resize: FAIL writing ',par,'\',name,' (',r,')');
+    Result:=False;
+   end;
+  end;
+ //Read back what was written, from the raw data
+ Check:=TDiscImage.Create(N);
+ A:=TStringList.Create; B:=TStringList.Create;
+ A.Text:=Listing(Old); B.Text:=Listing(Check);
+ A.Sort; B.Sort;
+ if UpperCase(A.Text)<>UpperCase(B.Text) then
+ begin
+  WriteLn('Resize: FAIL - the files are different');
+  for d:=0 to A.Count-1 do if B.IndexOf(A[d])<0 then WriteLn('  missing: ',A[d]);
+  for d:=0 to B.Count-1 do if A.IndexOf(B[d])<0 then WriteLn('  extra  : ',B[d]);
+  Result:=False;
+ end;
+ if Check.DOSFATType<>newfat then
+ begin
+  WriteLn('Resize: FAIL - FAT type is ',IntToHex(Check.DOSFATType,2));
+  Result:=False;
+ end;
+ if Result then
+  WriteLn('Resize ',newsize div 1024,'K FAT',IntToHex(newfat,2),': OK, ',
+          Check.FormatString,', image ',Length(Check.RAWData),' bytes, ',
+          Length(Check.Disc[0].Entries),' root entries, first ',
+          Check.Disc[0].Entries[0].Filename,' at ',Check.Disc[0].Entries[0].Sector);
+ A.Free; B.Free;
+ Check.Free; N.Free; Old.Free;
+end;
+
 {Creates directories inside new directories, copies and moves them, and
  checks that all of it is there after reading the image back in, and that it
  can still be defragged}
@@ -523,6 +619,24 @@ begin
      if not PathNameTest(ParamStr(1),True) then ExitCode:=3;
      if not RepairTest(ParamStr(1)) then ExitCode:=3;
      if not TimesTest(ParamStr(1)) then ExitCode:=3;
+     if Pos('macfloppy',ParamStr(1))>0 then
+     begin
+      if not ResizeTest(ParamStr(1), 737280,diFAT12) then ExitCode:=3;
+      if not ResizeTest(ParamStr(1),2949120,diFAT12) then ExitCode:=3;
+      if not ResizeTest(ParamStr(1),4194304,diFAT16) then ExitCode:=3;
+     end;
+     if Pos('untitled30m',ParamStr(1))>0 then
+     begin
+      if not ResizeTest(ParamStr(1),20*1048576,diFAT16) then ExitCode:=3;
+      if not ResizeTest(ParamStr(1),40*1048576,diFAT32) then ExitCode:=3;
+      if not ResizeTest(ParamStr(1),31*1048576,diFAT12) then ExitCode:=3;
+     end;
+     if Pos('hdd_86boxmac',ParamStr(1))>0 then
+     begin
+      if not ResizeTest(ParamStr(1),200*1048576,diFAT16) then ExitCode:=3;
+      if not ResizeTest(ParamStr(1),200*1048576,diFAT32) then ExitCode:=3;
+      if not ResizeTest(ParamStr(1),100*1048576,diFAT16) then ExitCode:=3;
+     end;
      if not SortTest(ParamStr(1),6) then ExitCode:=3;
     end;
     //Again, on a fresh copy, with short filenames only
