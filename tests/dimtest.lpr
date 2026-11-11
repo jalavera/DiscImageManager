@@ -25,6 +25,24 @@ begin
            +' '+IntToStr(Img.Disc[d].Entries[e].Length)+LineEnding;
 end;
 
+{The same, but directories show <DIR> instead of their length, which is the
+ size of a cluster and changes when a volume is resized}
+function FileListing(Img: TDiscImage): String;
+var
+ d,e: Integer;
+begin
+ Result:='';
+ for d:=0 to Length(Img.Disc)-1 do
+  if not Img.Disc[d].Deleted then
+   for e:=0 to Length(Img.Disc[d].Entries)-1 do
+    if Img.Disc[d].Entries[e].DirRef>=0 then
+     Result:=Result+Img.GetParent(d)+'\'+Img.Disc[d].Entries[e].Filename
+            +' <DIR>'+LineEnding
+    else
+     Result:=Result+Img.GetParent(d)+'\'+Img.Disc[d].Entries[e].Filename
+            +' '+IntToStr(Img.Disc[d].Entries[e].Length)+LineEnding;
+end;
+
 {Does what the GUI defrag does: deletes everything in the root, then copies
  everything back in from a copy of the image. With SFN set, it is done with
  "No long filenames on DOS images" turned on, so names may change and only the
@@ -459,7 +477,7 @@ begin
  //Read back what was written, from the raw data
  Check:=TDiscImage.Create(N);
  A:=TStringList.Create; B:=TStringList.Create;
- A.Text:=Listing(Old); B.Text:=Listing(Check);
+ A.Text:=FileListing(Old); B.Text:=FileListing(Check);
  A.Sort; B.Sort;
  if UpperCase(A.Text)<>UpperCase(B.Text) then
  begin
