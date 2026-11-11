@@ -78,6 +78,8 @@ begin
  Frfscopyright        :=Clone.DefaultRFSCopyright;
  //Filename
  FFilename    :=Clone.Filename;
+ //The same DOS partition (of a hard disc image) as the original
+ FDOSPartChoice:=Clone.FDOSPartChoice;
  //Just read the data in
  If IDImage then ReadImage;
  //And set the filename

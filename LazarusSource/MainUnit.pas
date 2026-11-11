@@ -470,6 +470,10 @@ type
   procedure SetWindowPlace;
   procedure TreeExpandClick(Sender: TObject);
   function IsBootNode(Node: TTreeNode): Boolean;
+  procedure ResizeClick(Sender: TObject);
+  procedure BackupClick(Sender: TObject);
+  procedure MakeBackup(filename: String);
+  procedure DoResize(newsize: QWord;newfat: Byte);
   function RefuseBootFiles: Boolean;
   function SetEntryAttributes(dir,entry: Integer;const want: array of TCheckBoxState;
    recurse: Boolean;modt,cret: TDateTime): Integer;
@@ -551,6 +555,9 @@ type
    menuChangeAttr,
    popChangeAttr       :TMenuItem;
    TreePopup           :TPopupMenu; //Right click on a tree arrow
+   menuResize,
+   menuBackup          :TMenuItem;
+   FMakeBackup         :Boolean; //Keep a .bak copy of each image opened
    TreePopupNode       :TTreeNode;
    HeaderSortCol       :Integer; //Column the list was last sorted by (-1 none)
    HeaderSortDesc      :Boolean;
@@ -2082,6 +2089,8 @@ begin
  if Image.LoadFromFile(filename) then
  begin
   HasChanged:=False;
+  //Keep a copy of the image as it was, until it is opened again
+  MakeBackup(filename);
   //Write debugging information
   if Length(Image.Disc)>0 then
   begin
@@ -2281,6 +2290,7 @@ var
  ok: Boolean=False;
 begin
  ok:=(Image<>nil)and(Image.MajorFormatNumber=diDOSPlus)and(Length(Image.Disc)>0);
+ if menuResize<>nil then menuResize.Enabled:=ok;
  if menuSortFiles<>nil then menuSortFiles.Enabled:=ok;
  if btn_SortFiles<>nil then btn_SortFiles.Enabled:=ok;
  //Change Attributes needs something selected (the root means everything)
@@ -2330,6 +2340,265 @@ begin
   if not quiet then
    ShowInfo('Nothing to sort: the files are already in that order');
  end;
+end;
+
+{------------------------------------------------------------------------------}
+//Keep a .bak copy when opening, on or off
+{------------------------------------------------------------------------------}
+procedure TMainForm.BackupClick(Sender: TObject);
+begin
+ FMakeBackup:=not FMakeBackup;
+ menuBackup.Checked:=FMakeBackup;
+ DIMReg.SetRegValB('MakeBackup',FMakeBackup);
+end;
+
+{------------------------------------------------------------------------------}
+//Copy an image, as it is when opened, to <name>.bak next to it. It stays until
+//the image is opened again (saving does not change it).
+{------------------------------------------------------------------------------}
+procedure TMainForm.MakeBackup(filename: String);
+var
+ src: TFileStream=nil;
+ dst: TFileStream=nil;
+begin
+ if not FMakeBackup then exit;
+ if LowerCase(ExtractFileExt(filename))='.bak' then exit;
+ if not SysUtils.FileExists(filename) then exit;
+ try
+  src:=TFileStream.Create(filename,fmOpenRead or fmShareDenyNone);
+  try
+   dst:=TFileStream.Create(filename+'.bak',fmCreate);
+   try
+    dst.CopyFrom(src,0);
+   finally
+    dst.Free;
+   end;
+  finally
+   src.Free;
+  end;
+ except
+  on E: Exception do
+   WriteToDebug('MainForm.MakeBackup: could not make the copy - '+E.Message);
+ end;
+end;
+
+{------------------------------------------------------------------------------}
+//Make a DOS volume bigger or smaller, and/or change its FAT type
+{------------------------------------------------------------------------------}
+procedure TMainForm.ResizeClick(Sender: TObject);
+const
+ Labels: array[0..12] of String=('360 KB','720 KB','1.2 MB','1.44 MB','2.88 MB',
+                                 '10 MB','20 MB','32 MB','64 MB','128 MB',
+                                 '256 MB','512 MB','1024 MB');
+ Sizes : array[0..12] of QWord=(368640,737280,1228800,1474560,2949120,
+                                10485760,20971520,33554432,67108864,134217728,
+                                268435456,536870912,1073741824);
+var
+ F      : TForm=nil;
+ lbCur,
+ lbNote,
+ lbSize : TLabel;
+ cbSize : TComboBox;
+ rb     : array[0..2] of TRadioButton;
+ bOK,
+ bCancel: TButton;
+ total  : QWord=0;
+ used   : QWord=0;
+ newsize: QWord=0;
+ mult   : QWord=0;
+ newfat : Byte=0;
+ i      : Integer=0;
+ t      : String='';
+ v      : Double=0;
+ fs     : TFormatSettings;
+ function SizeText(b: QWord): String;
+ begin
+  if b<1048576 then Result:=IntToStr(b div 1024)+' KB'
+  else Result:=FormatFloat('0.##',b/1048576)+' MB';
+ end;
+ function FATName(f: Byte): String;
+ begin
+  case f of
+   diFAT12: Result:='FAT12';
+   diFAT16: Result:='FAT16';
+   diFAT32: Result:='FAT32';
+  else Result:='?';
+  end;
+ end;
+begin
+ if Image.MajorFormatNumber<>diDOSPlus then exit;
+ total:=Image.DiscSize(0);
+ used :=total-Image.FreeSpace(0);
+ F:=TForm.CreateNew(Self);
+ try
+  F.Caption:=_T('Resize / Change FAT');
+  F.BorderStyle:=bsDialog;
+  F.Position:=poMainFormCenter;
+  F.ClientWidth:=520;
+  lbCur:=TLabel.Create(F);
+  lbCur.Parent:=F;
+  lbCur.SetBounds(16,12,488,20);
+  lbCur.Caption:=_T('Now:')+' '+FATName(Image.DOSFATType)+', '+SizeText(total)
+                +' ('+_T('used:')+' '+SizeText(used)+')';
+  lbSize:=TLabel.Create(F);
+  lbSize.Parent:=F;
+  lbSize.SetBounds(16,46,140,20);
+  lbSize.Caption:=_T('New size:');
+  cbSize:=TComboBox.Create(F);
+  cbSize.Parent:=F;
+  cbSize.SetBounds(160,42,160,24);
+  for i:=0 to High(Labels) do cbSize.Items.Add(Labels[i]);
+  cbSize.Text:=SizeText(total);
+  for i:=0 to High(Sizes) do if Sizes[i]=total then cbSize.Text:=Labels[i];
+  for i:=0 to 2 do
+  begin
+   rb[i]:=TRadioButton.Create(F);
+   rb[i].Parent:=F;
+   rb[i].SetBounds(160+i*100,78,90,22);
+   rb[i].Caption:=FATName(diFAT12+i*4+(i div 2)*24);
+  end;
+  rb[0].Checked:=Image.DOSFATType=diFAT12;
+  rb[1].Checked:=Image.DOSFATType=diFAT16;
+  rb[2].Checked:=Image.DOSFATType=diFAT32;
+  lbNote:=TLabel.Create(F);
+  lbNote.Parent:=F;
+  lbNote.WordWrap:=True;
+  lbNote.AutoSize:=False;
+  lbNote.SetBounds(16,112,488,110);
+  t:=_T('MS-DOS 3 can only use FAT12 or FAT16 volumes of up to 32 MB.')+LineEnding
+    +_T('Changing to or from FAT32 makes the disc unbootable, until SYS is run.')+LineEnding
+    +_T('The files are copied across, in the order chosen in Sort When Defragging.');
+  if Image.DOSPartitionCount>0 then
+   t:=t+LineEnding+_T('This is a partition of a hard disc image: the partition table is updated, and if the disc image has to grow, its size in 86Box has to be changed too.');
+  lbNote.Caption:=t;
+  bOK:=TButton.Create(F);
+  bOK.Parent:=F;
+  bOK.Caption:=_T('OK');
+  bOK.ModalResult:=mrOK;
+  bOK.Default:=True;
+  bOK.SetBounds(F.ClientWidth-180,232,80,28);
+  bCancel:=TButton.Create(F);
+  bCancel.Parent:=F;
+  bCancel.Caption:=_T('Cancel');
+  bCancel.ModalResult:=mrCancel;
+  bCancel.Cancel:=True;
+  bCancel.SetBounds(F.ClientWidth-92,232,80,28);
+  F.ClientHeight:=272;
+  if F.ShowModal<>mrOK then exit;
+  //The FAT type
+  newfat:=diFAT12;
+  if rb[1].Checked then newfat:=diFAT16;
+  if rb[2].Checked then newfat:=diFAT32;
+  //The size: one of the list, or a number with KB, MB or GB (MB if none)
+  t:=UpperCase(StringReplace(Trim(cbSize.Text),' ','',[rfReplaceAll]));
+  newsize:=0;
+  for i:=0 to High(Labels) do
+   if t=UpperCase(StringReplace(Labels[i],' ','',[rfReplaceAll]))then
+    newsize:=Sizes[i];
+  if newsize=0 then
+  begin
+   mult:=1048576;
+   if(RightStr(t,2)='KB')then begin mult:=1024; t:=LeftStr(t,Length(t)-2); end else
+   if(RightStr(t,2)='MB')then begin mult:=1048576; t:=LeftStr(t,Length(t)-2); end else
+   if(RightStr(t,2)='GB')then begin mult:=1073741824; t:=LeftStr(t,Length(t)-2); end else
+   if(RightStr(t,1)='K')then begin mult:=1024; t:=LeftStr(t,Length(t)-1); end else
+   if(RightStr(t,1)='M')then begin mult:=1048576; t:=LeftStr(t,Length(t)-1); end else
+   if(RightStr(t,1)='G')then begin mult:=1073741824; t:=LeftStr(t,Length(t)-1); end;
+   fs:=DefaultFormatSettings;
+   fs.DecimalSeparator:='.';
+   v:=StrToFloatDef(StringReplace(t,',','.',[]),0,fs);
+   newsize:=Round(v*mult);
+  end;
+ finally
+  F.Free;
+ end;
+ if newsize<180*1024 then
+ begin
+  ReportError('That size is not valid');
+  exit;
+ end;
+ if newsize<used then
+ begin
+  ReportError('The files do not fit in that size');
+  exit;
+ end;
+ DoResize(newsize,newfat);
+end;
+
+{------------------------------------------------------------------------------}
+//Make the new volume, then copy all the files into it (as Defrag does)
+{------------------------------------------------------------------------------}
+procedure TMainForm.DoResize(newsize: QWord;newfat: Byte);
+var
+ OldImage: TDiscImage=nil;
+ NewVol  : TDiscImage=nil;
+ oldscan : Boolean=False;
+ olddos  : Boolean=False;
+ ok      : Boolean=False;
+ msg     : String='';
+ title   : String='';
+ oldlen  : QWord=0;
+begin
+ WriteToDebug('MainForm.DoResize('+IntToStr(newsize)+')');
+ ProgressForm.Show;
+ UpdateProgress('Preparing');
+ Application.ProcessMessages;
+ Image.ProgressIndicator:=nil;
+ //As Defrag: 8.3 names only if asked to, and sorted if asked to
+ if FDOSUseSFN then
+  if Image.RemoveDOSLongFilenames then HasChanged:=True;
+ if DefragSort>=0 then
+  if Image.SortDOSDirectories(DefragSort div 2,Odd(DefragSort)) then HasChanged:=True;
+ //A copy of the image as it is now
+ oldscan:=Image.ScanSubDirs;
+ olddos :=Image.OpenDOSPartitions;
+ Image.ScanSubDirs:=True;
+ Image.OpenDOSPartitions:=False;
+ OldImage:=TDiscImage.Create(Image);
+ Image.ScanSubDirs:=oldscan;
+ Image.OpenDOSPartitions:=olddos;
+ OldImage.ProgressIndicator:=nil;
+ oldlen:=Length(OldImage.RAWData);
+ title:=Trim(OldImage.Title(0));
+ //The new, empty, volume
+ NewVol:=TDiscImage.Create(OldImage);
+ NewVol.ProgressIndicator:=nil;
+ if not NewVol.CreateDOSVolumeFrom(OldImage,newsize,newfat,msg) then
+ begin
+  NewVol.Free;
+  OldImage.Free;
+  ProgressForm.Hide;
+  ReportError(msg);
+  exit;
+ end;
+ Image.Free;
+ Image:=NewVol;
+ if(title<>'')and(UpperCase(title)<>'NO NAME')then Image.UpdateDiscTitle(title,0);
+ ShowNewImage(Image.Filename);
+ //Copy the files across
+ SelectNode(Image.Disc[0].Directory);
+ Image.ProgressIndicator:=@UpdateProgress;
+ ok:=ImportFiles(OldImage,False,False)=0;
+ Image.ProgressIndicator:=nil;
+ if not ok then
+ begin
+  //Put it back as it was
+  Image.Free;
+  Image:=TDiscImage.Create(OldImage);
+  ReportError('The files could not all be copied, so nothing has been changed');
+ end
+ else HasChanged:=True;
+ ShowNewImage(Image.Filename);
+ UpdateImageInfo;
+ ProgressForm.Hide;
+ if ok then
+ begin
+  if msg<>'' then ShowInfo(msg);
+  if QWord(Length(Image.RAWData))<>oldlen then
+   ShowInfo(_T('The disc image is now')+' '+IntToStr(Length(Image.RAWData))+' '
+           +_T('bytes. If it is used in an emulator, its size there has to be changed too.'));
+ end;
+ OldImage.Free;
 end;
 
 {------------------------------------------------------------------------------}
@@ -4893,6 +5162,19 @@ begin
   menuitem.OnClick:=@TreeExpandClick;
   TreePopup.Items.Add(menuitem);
  end;
+ //Resize / change the FAT of a DOS image, after Defrag in the Image menu
+ menuResize:=TMenuItem.Create(menuDefrag.Parent);
+ menuResize.Caption:=_T('Resize / Change FAT...');
+ menuResize.OnClick:=@ResizeClick;
+ menuResize.Enabled:=False;
+ menuDefrag.Parent.Insert(menuDefragSort.MenuIndex+1,menuResize);
+ //Keep a copy of each image opened, as <name>.bak
+ FMakeBackup:=DIMReg.GetRegValB('MakeBackup',True);
+ menuBackup:=TMenuItem.Create(menuDefrag.Parent);
+ menuBackup.Caption:=_T('Keep a .bak copy when opening');
+ menuBackup.Checked:=FMakeBackup;
+ menuBackup.OnClick:=@BackupClick;
+ menuDefrag.Parent.Insert(menuResize.MenuIndex+1,menuBackup);
  //And the 'everything' ones in the View menu too
  menuitem:=TMenuItem.Create(ViewMenu);
  menuitem.Caption:='-';

@@ -1174,6 +1174,10 @@ type
   function RepairDOSNames: Boolean;
   function DOSBootFile(const A: TDirEntry): Boolean;
   function SetDOSEntryTimes(dir,entry: Integer;modified,created: TDateTime): Boolean;
+  function WriteFATVolume(offset: QWord;totsec: Cardinal;fat: Byte;
+                          hidden: Cardinal;spt,heads: Word): Boolean;
+  function CreateDOSVolumeFrom(Src: TDiscImage;newsize: QWord;newfat: Byte;
+                               out msg: String): Boolean;
   function IsDOSSystemEntry(dir,entry: Integer): Boolean;
   function DOSPartitionCount: Integer;
   function DOSPartitionDescription(index: Integer): String;

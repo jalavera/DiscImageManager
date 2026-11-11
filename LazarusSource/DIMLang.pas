@@ -32,7 +32,7 @@ procedure TranslateAllForms;
 implementation
 
 const
- Pairs: array[0..401,0..1] of String = (
+ Pairs: array[0..430,0..1] of String = (
   ('  Application Styling','  Aparença de l''aplicació'),
   ('  Columns','  Columnes'),
   ('  DFS Validation','  Validació DFS'),
@@ -434,6 +434,35 @@ const
   ('Version 1.6 (FAT/DOS edition) by JIMSOFT and Claude','Versió 1.6 (edició FAT/DOS) per JIMSOFT i Claude'),
   ('(system file)','(arxiu de sistema)'),
   ('System files, which the disc needs to start, can not be renamed, deleted or moved.','Els fitxers de sistema, que el disc necessita per arrencar, no es poden reanomenar, esborrar ni moure.'),
+  ('Resize / Change FAT...','Canvia la mida / el tipus de FAT...'),
+  ('Resize / Change FAT','Canvia la mida / el tipus de FAT'),
+  ('Keep a .bak copy when opening','Desa una còpia .bak en obrir'),
+  ('Now:','Ara:'),
+  ('used:','ocupat:'),
+  ('New size:','Mida nova:'),
+  ('MS-DOS 3 can only use FAT12 or FAT16 volumes of up to 32 MB.','El MS-DOS 3 només pot fer servir volums FAT12 o FAT16 de fins a 32 MB.'),
+  ('Changing to or from FAT32 makes the disc unbootable, until SYS is run.','Canviar a FAT32 o des de FAT32 fa que el disc no arrenqui fins que s''executi SYS.'),
+  ('The files are copied across, in the order chosen in Sort When Defragging.','Els fitxers es copien en l''ordre triat a «Ordena en desfragmentar».'),
+  ('This is a partition of a hard disc image: the partition table is updated, and if the disc image has to grow, its size in 86Box has to be changed too.','És una partició d''una imatge de disc dur: s''actualitza la taula de particions i, si la imatge ha de créixer, també cal canviar-ne la mida a 86Box.'),
+  ('That size is not valid','Aquesta mida no és vàlida'),
+  ('The files do not fit in that size','Els fitxers no hi caben, amb aquesta mida'),
+  ('The files could not all be copied, so nothing has been changed','No s''han pogut copiar tots els fitxers, així que no s''ha canviat res'),
+  ('The disc image is now','La imatge de disc ara fa'),
+  ('bytes. If it is used in an emulator, its size there has to be changed too.','bytes. Si es fa servir en un emulador, també cal canviar-hi la mida.'),
+  ('Preparing','Preparant'),
+  ('This is not a DOS image','No és una imatge DOS'),
+  ('This image is too big to be changed','Aquesta imatge és massa gran per canviar-la'),
+  ('This type of DOS image can not be changed','Aquest tipus d''imatge DOS no es pot canviar'),
+  ('FAT32 needs at least 33 MB','FAT32 necessita com a mínim 33 MB'),
+  ('Only primary partitions can be changed','Només es poden canviar les particions primàries'),
+  ('The partition was not found in the partition table','No s''ha trobat la partició a la taula de particions'),
+  ('There is another partition after this one, so it can not be made that big','Hi ha una altra partició després d''aquesta, així que no pot ser tan gran'),
+  ('FAT12 can not be used for that size (it has to be smaller)','No es pot fer servir FAT12 amb aquesta mida (ha de ser més petita)'),
+  ('FAT16 can not be used for that size (it has to be between about 2 MB and 2 GB)','No es pot fer servir FAT16 amb aquesta mida (ha de ser d''entre uns 2 MB i 2 GB)'),
+  ('The disc will not start: its boot code is for DOS 3, which can not use a volume over 32 MB','El disc no arrencarà: el seu codi d''arrencada és per a DOS 3, que no pot fer servir volums de més de 32 MB'),
+  ('The disc will not start (changing to or from FAT32 needs new boot code: use SYS from DOS)','El disc no arrencarà (canviar a FAT32 o des de FAT32 necessita codi d''arrencada nou: feu servir SYS des del DOS)'),
+  ('DOS 3 can only use partitions up to 32 MB','El DOS 3 només pot fer servir particions de fins a 32 MB'),
+  ('The new volume could not be read','No s''ha pogut llegir el volum nou'),
   ('Save Side As','Desa la cara com a')
  );
 

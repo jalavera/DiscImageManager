@@ -2389,6 +2389,330 @@ begin
 end;
 
 {-------------------------------------------------------------------------------
+Write an empty FAT12 or FAT16 volume (boot sector, FATs and root) of totsec
+sectors at offset. Standard floppy sizes get the values DOS formats them with.
+Returns False if that FAT type can not be used for that size.
+-------------------------------------------------------------------------------}
+function TDiscImage.WriteFATVolume(offset: QWord;totsec: Cardinal;fat: Byte;
+                                   hidden: Cardinal;spt,heads: Word): Boolean;
+var
+ spc     : Cardinal=1;
+ rootents: Cardinal=512;
+ rootsecs: Cardinal=0;
+ fatsz   : Cardinal=1;
+ nfs     : Cardinal=0;
+ data    : Int64=0;
+ clus    : Int64=0;
+ need    : Int64=0;
+ media   : Byte=$F8;
+ i       : Integer=0;
+ fixed   : Boolean=False;
+ found   : Boolean=False;
+const
+ bootCode : array[0..40] of Byte = ($FA,$31,$C0,$8E,$D0,$BC,$00,$7C,$FB,$8E,
+                                    $D8,$E8,$00,$00,$5E,$83,$C6,$19,$BB,$07,
+                                    $00,$FC,$AC,$84,$C0,$74,$06,$B4,$0E,$CD,
+                                    $10,$EB,$F5,$30,$E4,$CD,$16,$CD,$19,$0D,
+                                    $0A);
+ procedure Layout;
+ var
+  j: Integer=0;
+ begin
+  rootsecs:=(rootents*32+511)div 512;
+  fatsz:=1;
+  for j:=0 to 15 do
+  begin
+   data:=Int64(totsec)-1-2*fatsz-rootsecs;
+   if data<=0 then exit;
+   clus:=data div spc;
+   if fat=diFAT12 then need:=((clus+2)*3+1)div 2 else need:=(clus+2)*2;
+   nfs:=(need+511)div 512;
+   if nfs=fatsz then break;
+   fatsz:=nfs;
+  end;
+ end;
+begin
+ Result:=False;
+ if(fat<>diFAT12)and(fat<>diFAT16)then exit;
+ if spt=0 then spt:=63;
+ if heads=0 then heads:=16;
+ //Standard floppy discs (not in a partition)
+ if(fat=diFAT12)and(hidden=0)then
+ begin
+  fixed:=True;
+  case totsec of
+    320: begin spc:=2; rootents:=112; media:=$FF; spt:= 8; heads:=2; end; //160K x2
+    360: begin spc:=1; rootents:= 64; media:=$FC; spt:= 9; heads:=1; end; //180K
+    640: begin spc:=2; rootents:=112; media:=$FF; spt:= 8; heads:=2; end; //320K
+    720: begin spc:=2; rootents:=112; media:=$FD; spt:= 9; heads:=2; end; //360K
+   1440: begin spc:=2; rootents:=112; media:=$F9; spt:= 9; heads:=2; end; //720K
+   2400: begin spc:=1; rootents:=224; media:=$F9; spt:=15; heads:=2; end; //1.2M
+   2880: begin spc:=1; rootents:=224; media:=$F0; spt:=18; heads:=2; end; //1.44M
+   5760: begin spc:=2; rootents:=240; media:=$F0; spt:=36; heads:=2; end; //2.88M
+  else fixed:=False;
+  end;
+ end;
+ if fixed then
+ begin
+  Layout;
+  found:=data>0;
+ end
+ else
+ begin
+  //Find the smallest cluster size that the FAT can address
+  spc:=1;
+  while(spc<=64)and(not found)do
+  begin
+   Layout;
+   if data>0 then
+   begin
+    if(fat=diFAT12)and(clus<=4084)then found:=True;
+    if(fat=diFAT16)and(clus<=65524)then found:=clus>=4085;
+    //FAT16 needs at least 4085 clusters, so a smaller cluster will not help
+    if(fat=diFAT16)and(clus<4085)then break;
+   end;
+   if not found then spc:=spc*2;
+  end;
+ end;
+ if not found then exit;
+ //Clear the system area
+ for i:=0 to (1+2*fatsz+rootsecs)*512-1 do WriteByte(0,offset+i);
+ //Jump, OEM name and BIOS Parameter Block
+ WriteByte($EB,offset+$00);
+ WriteByte($3C,offset+$01);
+ WriteByte($90,offset+$02);
+ WriteString('DiImgMgr',offset+$03,8,32);
+ Write16b(512,offset+$0B);
+ WriteByte(spc,offset+$0D);
+ Write16b(1,offset+$0E);           //Reserved sectors
+ WriteByte(2,offset+$10);          //Number of FATs
+ Write16b(rootents,offset+$11);
+ if totsec<=$FFFF then Write16b(totsec,offset+$13)
+ else Write32b(totsec,offset+$20);
+ WriteByte(media,offset+$15);
+ Write16b(fatsz,offset+$16);
+ Write16b(spt,offset+$18);
+ Write16b(heads,offset+$1A);
+ Write32b(hidden,offset+$1C);
+ if hidden>0 then WriteByte($80,offset+$24); //Drive number
+ WriteByte($29,offset+$26);                  //Extended boot signature
+ Write32b(VolumeSerialNumber,offset+$27);
+ WriteString('NO NAME',offset+$2B,11,32);
+ if fat=diFAT12 then WriteString('FAT12',offset+$36,8,32)
+ else WriteString('FAT16',offset+$36,8,32);
+ //Boot code: says it is not a system disc
+ for i:=0 to Length(bootCode)-1 do WriteByte(bootCode[i],offset+$3E+i);
+ WriteString('Non-system disk'#$0D#$0A'Press any key to reboot'#$0D#$0A,
+             offset+$3E+Length(bootCode),0,0);
+ Write16b($AA55,offset+$1FE);
+ //Start of each FAT
+ for i:=0 to 1 do
+ begin
+  WriteByte(media,offset+512+QWord(i)*fatsz*512);
+  WriteByte($FF  ,offset+512+QWord(i)*fatsz*512+1);
+  WriteByte($FF  ,offset+512+QWord(i)*fatsz*512+2);
+  if fat=diFAT16 then WriteByte($FF,offset+512+QWord(i)*fatsz*512+3);
+ end;
+ Result:=True;
+end;
+
+{-------------------------------------------------------------------------------
+Make this image a new, empty, DOS volume of a different size and/or FAT type
+from the one in Src (which is not changed). For a partitioned hard disc image,
+the partition table and the rest of the disc are kept, and only the open
+(primary) partition changes. The boot code of Src is kept (so a bootable disc
+still boots) when neither is FAT32. The files then need copying across.
+msg has the reason when it fails, or a warning when it works.
+-------------------------------------------------------------------------------}
+function TDiscImage.CreateDOSVolumeFrom(Src: TDiscImage;newsize: QWord;
+                               newfat: Byte;out msg: String): Boolean;
+var
+ pstart  : QWord=0;
+ srclen  : QWord=0;
+ newlen  : QWord=0;
+ ob      : QWord=0;
+ nb      : QWord=0;
+ i       : Integer=0;
+ slot    : Integer=-1;
+ part    : Integer=-1;
+ st      : QWord=0;
+ ln      : QWord=0;
+ totsec  : Cardinal=0;
+ hidden  : Cardinal=0;
+ spt     : Word=0;
+ heads   : Word=0;
+ cyl     : Cardinal=0;
+ lbaend  : Cardinal=0;
+ c,h,s   : Cardinal;
+ srcfat  : Byte=0;
+ ptype   : Byte=0;
+ oldext  : Boolean=False;
+ code    : Integer=0;
+begin
+ Result:=False;
+ msg:='';
+ if Src.GetMajorFormatNumber<>diDOSPlus then
+ begin
+  msg:='This is not a DOS image';
+  exit;
+ end;
+ if Src.Streamed then
+ begin
+  msg:='This image is too big to be changed';
+  exit;
+ end;
+ srcfat:=Src.FATType;
+ if(newfat=diFAT32)and(newsize<33300*1024)then
+ begin
+  msg:='FAT32 needs at least 33 MB';
+  exit;
+ end;
+ if(srcfat<>diFAT12)and(srcfat<>diFAT16)and(srcfat<>diFAT32)then
+ begin
+  msg:='This type of DOS image can not be changed';
+  exit;
+ end;
+ newsize:=(newsize div 512)*512;
+ totsec:=newsize div 512;
+ srclen:=Src.GetDataLength;
+ ob:=Src.doshead;
+ spt  :=Src.Read16b(ob+$18);
+ heads:=Src.Read16b(ob+$1A);
+ //A partition in a hard disc image?
+ if Length(Src.FDOSPartList)>0 then
+ begin
+  part:=Src.FDOSPartChoice;
+  if(part<0)or(part>=Length(Src.FDOSPartList))then part:=0;
+  if Src.FDOSPartList[part].Logical then
+  begin
+   msg:='Only primary partitions can be changed';
+   exit;
+  end;
+  pstart:=Src.FDOSPartList[part].Offset;
+  for i:=0 to 3 do
+   if QWord(Src.Read32b($1BE+i*$10+8))*512=pstart then slot:=i;
+  if slot<0 then
+  begin
+   msg:='The partition was not found in the partition table';
+   exit;
+  end;
+  //It can not grow into the partition after it
+  for i:=0 to 3 do
+   if(i<>slot)and(Src.ReadByte($1BE+i*$10+4)<>0)then
+   begin
+    st:=QWord(Src.Read32b($1BE+i*$10+8))*512;
+    ln:=QWord(Src.Read32b($1BE+i*$10+12))*512;
+    if(st>=pstart)and(st<pstart+newsize)and(ln>0)then
+    begin
+     msg:='There is another partition after this one, so it can not be made that big';
+     exit;
+    end;
+   end;
+  hidden:=pstart div 512;
+  newlen:=pstart+newsize;
+  //The disc image grows to a whole number of cylinders, if it has to grow
+  if(newlen>srclen)and(spt>0)and(heads>0)then
+  begin
+   cyl:=(newlen+QWord(spt)*heads*512-1)div(QWord(spt)*heads*512);
+   newlen:=QWord(cyl)*spt*heads*512;
+  end;
+  if newlen<srclen then newlen:=srclen;
+ end
+ else newlen:=newsize;
+ //Start afresh
+ ResetVariables;
+ SetLength(FDOSPartList,0);
+ //Start with a copy of the original (keeping the partition table and the
+ //other partitions), then clear the volume
+ SetDataLength(newlen);
+ for i:=0 to Length(Fdata)-1 do
+  if QWord(i)<srclen then Fdata[i]:=Src.RAWData[i] else Fdata[i]:=0;
+ ln:=0;
+ while ln<newsize do
+ begin
+  Fdata[pstart+ln]:=0;
+  inc(ln);
+ end;
+ //The new volume
+ if newfat=diFAT32 then
+ begin
+  WriteDOSHeader(pstart,newsize,diFAT32,True);
+  Write32b(hidden,pstart+$1C);
+  if(spt>0)and(heads>0)then
+  begin
+   Write16b(spt,pstart+$18);
+   Write16b(heads,pstart+$1A);
+  end;
+ end
+ else
+  if not WriteFATVolume(pstart,totsec,newfat,hidden,spt,heads) then
+  begin
+   if newfat=diFAT12 then
+    msg:='FAT12 can not be used for that size (it has to be smaller)'
+   else
+    msg:='FAT16 can not be used for that size (it has to be between about 2 MB and 2 GB)';
+   exit;
+  end;
+ nb:=pstart;
+ //Keep the boot code of the original, so it still boots
+ if(srcfat<>diFAT32)and(newfat<>diFAT32)then
+ begin
+  oldext:=Src.ReadByte(ob+$26)=$29;
+  if oldext then code:=$3E else code:=$1E;
+  if(not oldext)and(totsec>$FFFF)then
+   msg:='The disc will not start: its boot code is for DOS 3, which can not use a volume over 32 MB'
+  else
+  begin
+   for i:=0 to $0A do WriteByte(Src.ReadByte(ob+i),nb+i);
+   for i:=code to $1FD do WriteByte(Src.ReadByte(ob+i),nb+i);
+  end;
+ end
+ else
+  if srcfat<>newfat then
+   msg:='The disc will not start (changing to or from FAT32 needs new boot code: use SYS from DOS)';
+ //Update the partition table
+ if slot>=0 then
+ begin
+  case newfat of
+   diFAT12: ptype:=$01;
+   diFAT16: if totsec<=$FFFF then ptype:=$04 else ptype:=$06;
+   diFAT32: ptype:=$0B;
+  end;
+  WriteByte(ptype,$1BE+slot*$10+4);
+  Write32b(totsec,$1BE+slot*$10+12);
+  if(spt>0)and(heads>0)then
+  begin
+   lbaend:=hidden+totsec-1;
+   c:=lbaend div(Cardinal(spt)*heads);
+   h:=(lbaend div spt)mod heads;
+   s:=(lbaend mod spt)+1;
+   if c>1023 then
+   begin
+    c:=1023;
+    h:=heads-1;
+    s:=spt;
+   end;
+   WriteByte(h,$1BE+slot*$10+5);
+   WriteByte((s and $3F)or((c shr 2)and $C0),$1BE+slot*$10+6);
+   WriteByte(c and $FF,$1BE+slot*$10+7);
+  end;
+  if(totsec>$FFFF)and(msg='')then
+   msg:='DOS 3 can only use partitions up to 32 MB';
+ end;
+ //Read it in
+ FDOSPartChoice:=part;
+ if FDOSPartChoice<0 then FDOSPartChoice:=0;
+ FFilename:=Src.Filename;
+ if IDImage then
+ begin
+  ReadImage;
+  Result:=(Length(FDisc)>0)and(GetMajorFormatNumber=diDOSPlus);
+ end;
+ imagefilename:=FFilename;
+ if not Result then msg:='The new volume could not be read';
+end;
+
+{-------------------------------------------------------------------------------
 Write a DOS Header
 -------------------------------------------------------------------------------}
 procedure TDiscImage.WriteDOSHeader(offset, size: QWord;fat: Byte;bootable: Boolean);
