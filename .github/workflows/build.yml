@@ -22,7 +22,7 @@ jobs:
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
-          with-cache: false
+          with-cache: true
       - name: Build Win64
         working-directory: LazarusSource
         run: lazbuild -B --bm="Release Windows 64 bit" DiscImageManager.lpi
@@ -42,10 +42,19 @@ jobs:
           perl -pi -e "s/ApplicationVersion = '[0-9.]*';/ApplicationVersion = '1.6.${{ github.run_number }}';/" LazarusSource/MainUnit.pas
           perl -pi -e 's/ProductVersion="[0-9.]*"/ProductVersion="1.6.${{ github.run_number }}"/' LazarusSource/DiscImageManager.lpi
           grep -n "ApplicationVersion =" LazarusSource/MainUnit.pas
+      - name: Restore Lazarus (32 bit) from the cache
+        id: laz32
+        uses: actions/cache@v4
+        with:
+          path: C:\lazarus
+          key: lazarus-win32-choco-v1
       - name: Install Lazarus (32 bit)
+        if: steps.laz32.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: choco install lazarus --forcex86 -y --no-progress
+      - name: Find lazbuild (32 bit)
         shell: pwsh
         run: |
-          choco install lazarus --forcex86 -y --no-progress
           $laz = Get-ChildItem -Path 'C:\','C:\Program Files (x86)' -Filter lazbuild.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $laz) { throw 'lazbuild.exe not found' }
           Write-Host "Found $($laz.FullName)"
@@ -73,7 +82,7 @@ jobs:
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
-          with-cache: false
+          with-cache: true
       - name: Build macOS Intel (x86_64)
         working-directory: LazarusSource
         run: |

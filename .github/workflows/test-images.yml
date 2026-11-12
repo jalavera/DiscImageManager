@@ -39,10 +39,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Restore Lazarus (32 bit) from the cache
+        id: laz32
+        uses: actions/cache@v4
+        with:
+          path: C:\lazarus
+          key: lazarus-win32-choco-v1
       - name: Install Lazarus (32 bit)
+        if: steps.laz32.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: choco install lazarus --forcex86 -y --no-progress
+      - name: Find the 32 bit compiler
         shell: pwsh
         run: |
-          choco install lazarus --forcex86 -y --no-progress
           $fpc = Get-ChildItem -Path 'C:\lazarus\fpc' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*i386-win32*' } | Select-Object -First 1
           if (-not $fpc) { throw 'fpc.exe not found' }
           Write-Host "Found $($fpc.FullName)"
