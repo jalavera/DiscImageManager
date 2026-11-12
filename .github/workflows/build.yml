@@ -82,7 +82,7 @@ jobs:
       - uses: gcarreno/setup-lazarus@v3
         with:
           lazarus-version: "stable"
-          with-cache: true
+          with-cache: false  # the cache option breaks the macOS install of setup-lazarus
       - name: Build macOS Intel (x86_64)
         working-directory: LazarusSource
         run: |
